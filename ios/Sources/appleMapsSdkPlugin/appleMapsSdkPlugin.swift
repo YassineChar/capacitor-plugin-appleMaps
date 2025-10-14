@@ -97,6 +97,17 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             return
         }
         
+        // Make webview transparent so native map shows through
+        if let webView = viewController.view.subviews.first(where: { 
+            String(describing: type(of: $0)).contains("WKWebView") 
+        }) {
+            webView.isOpaque = false
+            webView.backgroundColor = .clear
+            if let scrollView = webView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+                scrollView.backgroundColor = .clear
+            }
+        }
+        
         // Calculate frame: start below header, extend to bottom minus any footer
         let safeArea = viewController.view.safeAreaInsets
         let topY = safeArea.top + self.mapTopOffset
@@ -119,7 +130,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         mapView.showsUserLocation = true
         mapView.isHidden = true
         
-        // Add map as subview at index 0 (behind webview content)
+        // Add map as subview at index 0 (behind webview)
         viewController.view.insertSubview(mapView, at: 0)
         
         manager.stopUpdatingLocation()
