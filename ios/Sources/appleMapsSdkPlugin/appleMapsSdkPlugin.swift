@@ -97,18 +97,12 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             return
         }
         
-        // Make webview transparent so native map shows through
-        if let webView = viewController.view.subviews.first(where: { 
-            String(describing: type(of: $0)).contains("WKWebView") 
-        }) {
-            webView.isOpaque = false
-            webView.backgroundColor = .clear
-            if let scrollView = webView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
-                scrollView.backgroundColor = .clear
-            }
+        guard let webView = self.bridge?.webView else {
+            manager.stopUpdatingLocation()
+            return
         }
         
-        // Calculate frame: start below header, extend to bottom minus any footer
+        // Calculate frame: start below header (topOffset), extend to bottom minus footer
         let safeArea = viewController.view.safeAreaInsets
         let topY = safeArea.top + self.mapTopOffset
         let availableHeight = viewController.view.bounds.height - topY - safeArea.bottom - self.mapHeightOffset
@@ -121,6 +115,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         )
         
         let mapView = MKMapView(frame: frame)
+        mapView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         self.mapView = mapView
         
         // Enable custom annotation rendering and clustering support
@@ -130,8 +125,15 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         mapView.showsUserLocation = true
         mapView.isHidden = true
         
-        // Add map as subview at index 0 (behind webview)
-        viewController.view.insertSubview(mapView, at: 0)
+        // Insert map BELOW the webview (Instagram approach)
+        viewController.view.insertSubview(mapView, belowSubview: webView)
+        
+        // Make webview background transparent so map shows through
+        webView.isOpaque = false
+        webView.backgroundColor = .clear
+        if let scrollView = webView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+            scrollView.backgroundColor = .clear
+        }
         
         manager.stopUpdatingLocation()
     }
