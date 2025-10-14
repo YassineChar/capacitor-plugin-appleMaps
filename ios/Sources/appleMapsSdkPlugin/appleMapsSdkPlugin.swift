@@ -87,7 +87,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         
         // Use full screen dimensions for map view
         guard let viewController = bridge?.viewController else {
-            call?.reject("View controller not available")
             manager.stopUpdatingLocation()
             return
         }
