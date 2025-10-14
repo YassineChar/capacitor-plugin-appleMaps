@@ -22,6 +22,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
     var locationManager: CLLocationManager?
     var userCircle: MKCircle?
     private var annotations: [String: CustomPointAnnotation] = [:]
+    private var mapTopOffset: CGFloat = 0
+    private var mapHeightOffset: CGFloat = 0
     
     public let identifier = "appleMapsSdkPlugin"
     public let jsName = "appleMapsSdk"
@@ -52,6 +54,10 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 call.resolve(["status": "success"])
                 return
             }
+            
+            // Get optional positioning parameters from JS (in pixels)
+            self.mapTopOffset = CGFloat(call.getDouble("topOffset") ?? 0.0)
+            self.mapHeightOffset = CGFloat(call.getDouble("heightOffset") ?? 0.0)
             
             // Location Manager Setup
             self.locationManager = CLLocationManager()
@@ -85,13 +91,24 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
         )
         
-        // Use full screen dimensions for map view
+        // Position map view with custom offsets for header/footer
         guard let viewController = bridge?.viewController else {
             manager.stopUpdatingLocation()
             return
         }
         
-        let frame = viewController.view.bounds
+        // Calculate frame: start below header, extend to bottom minus any footer
+        let safeArea = viewController.view.safeAreaInsets
+        let topY = safeArea.top + self.mapTopOffset
+        let availableHeight = viewController.view.bounds.height - topY - safeArea.bottom - self.mapHeightOffset
+        
+        let frame = CGRect(
+            x: 0,
+            y: topY,
+            width: viewController.view.bounds.width,
+            height: availableHeight
+        )
+        
         let mapView = MKMapView(frame: frame)
         self.mapView = mapView
         
@@ -102,9 +119,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         mapView.showsUserLocation = true
         mapView.isHidden = true
         
-        if let viewController = bridge?.viewController {
-            viewController.view.addSubview(mapView)
-        }
+        // Add map as subview at index 0 (behind webview content)
+        viewController.view.insertSubview(mapView, at: 0)
         
         manager.stopUpdatingLocation()
     }
