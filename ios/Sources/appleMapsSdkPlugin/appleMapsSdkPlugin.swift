@@ -102,10 +102,14 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             return
         }
         
-        // Calculate frame: start below header (topOffset), extend to bottom minus footer
+        // Calculate frame: start below header (topOffset), extend to bottom of screen
         let safeArea = viewController.view.safeAreaInsets
         let topY = safeArea.top + self.mapTopOffset
-        let availableHeight = viewController.view.bounds.height - topY - safeArea.bottom - self.mapHeightOffset
+        
+        // When using native UI (mapHeightOffset = 0), fill entire screen below header
+        // When using web UI with footer (mapHeightOffset > 0), subtract footer space
+        let bottomSpace = self.mapHeightOffset > 0 ? (safeArea.bottom + self.mapHeightOffset) : 0
+        let availableHeight = viewController.view.bounds.height - topY - bottomSpace
         
         let frame = CGRect(
             x: 0,
@@ -125,7 +129,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         mapView.showsUserLocation = true
         mapView.isHidden = true
         
-        // Insert map BELOW the webview (Instagram approach)
+        // Insert map BELOW the webview
         viewController.view.insertSubview(mapView, belowSubview: webView)
         
         // Make webview background transparent so map shows through
