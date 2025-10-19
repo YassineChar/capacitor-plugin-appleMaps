@@ -18,6 +18,8 @@ class CustomPointAnnotation: MKPointAnnotation {
     var avatarColor: String?
     var expiryColor: String?
     var markerSize: CGFloat = 60
+    var whisperId: String?
+    var isClickable: Bool = true
 }
 
 @objc(appleMapsSdkPlugin)
@@ -244,6 +246,16 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                     // Support custom marker size (default 60px)
                     if let markerSize = point["markerSize"] as? Double {
                         annotation.markerSize = CGFloat(markerSize)
+                    }
+                    
+                    // Support whisperId for navigation on tap
+                    if let whisperId = point["whisperId"] as? String {
+                        annotation.whisperId = whisperId
+                    }
+                    
+                    // Support isClickable flag for out-of-range whispers
+                    if let isClickable = point["isClickable"] as? Bool {
+                        annotation.isClickable = isClickable
                     }
                     
                     // Überprüfe, ob "startDate" und "endDate" vorhanden sind und ob sie sich unterscheiden
@@ -674,13 +686,21 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         mapView.deselectAnnotation(annotation, animated: false)
         
         // Notify JS layer about marker tap
-        notifyListeners("onMarkerTap", data: [
+        var tapData: [String: Any] = [
             "latitude": annotation.coordinate.latitude,
             "longitude": annotation.coordinate.longitude,
             "title": annotation.title ?? ""
-        ])
+        ]
         
-        print("📍 [MapKit] Marker tapped at: \(annotation.coordinate.latitude), \(annotation.coordinate.longitude)")
+        // Add whisperId and isClickable if available
+        if let whisperId = annotation.whisperId {
+            tapData["whisperId"] = whisperId
+        }
+        tapData["isClickable"] = annotation.isClickable
+        
+        notifyListeners("onMarkerTap", data: tapData)
+        
+        print("📍 [MapKit] Marker tapped - whisperId: \(annotation.whisperId ?? "none"), isClickable: \(annotation.isClickable)")
     }
     
     /**
