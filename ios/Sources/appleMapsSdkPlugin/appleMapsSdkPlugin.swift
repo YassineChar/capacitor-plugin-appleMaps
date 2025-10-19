@@ -143,6 +143,14 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         
         // Insert map BELOW the webview
         viewController.view.insertSubview(mapView, belowSubview: webView)
+
+        // Disable user interaction on Apple’s blue location dot (so whispers above it can be tapped)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.mapView?.subviews.forEach { subview in
+                if NSStringFromClass(type(of: subview)).contains("UserLocationView") {
+                    subview.isUserInteractionEnabled = false
+                }
+            }
         
         // Make webview background transparent so map shows through
         webView.isOpaque = false
@@ -318,20 +326,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
     public func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
         // Use default blue dot for user location BUT disable callout
         if annotation is MKUserLocation {
-            let identifier = "UserLocation"
-            var userView = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKUserLocationView
-            
-            if userView == nil {
-                userView = MKUserLocationView(annotation: annotation, reuseIdentifier: identifier)
-            } else {
-                userView?.annotation = annotation
-            }
-            
-            // Block callout and lower priority (so custom markers are tappable on top)
-            userView?.canShowCallout = false
-            userView?.displayPriority = .defaultLow
-            
-            return userView  // Return configured MKUserLocationView (blue dot without callout)
+            return nil
         }
 
         // Custom marker handling
