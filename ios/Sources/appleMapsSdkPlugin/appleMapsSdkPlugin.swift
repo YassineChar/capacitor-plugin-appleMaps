@@ -10,10 +10,12 @@ import CoreLocation
  * Properties:
  * - iconUrl: Optional URL string for custom marker icons
  * - expiryColor: Optional color string ("red", "yellow", "green") to indicate content expiry status
+ * - markerSize: Optional size in pixels for the marker (default 60)
  */
 class CustomPointAnnotation: MKPointAnnotation {
     var iconUrl: String?
     var expiryColor: String?
+    var markerSize: CGFloat = 60
 }
 
 @objc(appleMapsSdkPlugin)
@@ -227,6 +229,11 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                         annotation.expiryColor = expiryColor
                     }
                     
+                    // Support custom marker size (default 60px)
+                    if let markerSize = point["markerSize"] as? Double {
+                        annotation.markerSize = CGFloat(markerSize)
+                    }
+                    
                     // Überprüfe, ob "startDate" und "endDate" vorhanden sind und ob sie sich unterscheiden
                     if let startDate = point["startDate"] as? String, let endDate = point["endDate"] as? String {
                         if startDate == endDate {
@@ -302,12 +309,13 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         }
 
         let borderColor = getBorderColorFromExpiry(customAnnotation.expiryColor)
+        let markerSize = customAnnotation.markerSize
 
         // set fallback image (colored circle)
         annotationView?.image = self.generateCircularMarkerImage(
             profileImage: nil,
             borderColor: borderColor,
-            size: 40
+            size: markerSize
         )
 
         // load profile image (asynchronous)
@@ -317,7 +325,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 annotationView.image = self.generateCircularMarkerImage(
                     profileImage: image,
                     borderColor: borderColor,
-                    size: 40
+                    size: markerSize
                 )
             }
         }
