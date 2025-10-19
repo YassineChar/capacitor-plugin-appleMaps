@@ -31,6 +31,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
     private var annotations: [String: CustomPointAnnotation] = [:]
     private var mapTopOffset: CGFloat = 0
     private var mapHeightOffset: CGFloat = 0
+    private var hapticGenerator: UIImpactFeedbackGenerator?
     
     public let identifier = "appleMapsSdkPlugin"
     public let jsName = "appleMapsSdk"
@@ -128,6 +129,10 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         let mapView = MKMapView(frame: frame)
         mapView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         self.mapView = mapView
+        
+        // Prepare haptic generator for instant feedback (no delay on first tap)
+        self.hapticGenerator = UIImpactFeedbackGenerator(style: .light)
+        self.hapticGenerator?.prepare()
         
         // Enable custom annotation rendering and clustering support
         mapView.delegate = self
@@ -311,11 +316,21 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
      * @return MKAnnotationView configured for the annotation, or nil for user location
      */
     public func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-        // Don't customize user location marker - return nil to block callout and prevent tap interception
+        // Block user location callout - create custom view with no interaction
         if annotation is MKUserLocation {
-            let userView = mapView.view(for: annotation) as? MKAnnotationView
-            userView?.canShowCallout = false  // Disable Apple's default callout popup
-            userView?.displayPriority = .defaultLow  // Lower priority so custom markers are tappable on top
+            let identifier = "UserLocation"
+            var userView = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKAnnotationView
+            
+            if userView == nil {
+                userView = MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
+            } else {
+                userView?.annotation = annotation
+            }
+            
+            userView?.canShowCallout = false  // NO CALLOUT
+            userView?.isEnabled = false       // NO INTERACTION
+            userView?.displayPriority = .defaultLow  // Lower priority than custom markers
+            
             return userView
         }
 
@@ -332,6 +347,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             annotationView?.canShowCallout = false         // no Apple balloon
             annotationView?.clusteringIdentifier = nil     // disable native clustering
             annotationView?.displayPriority = .required    // Higher priority than user location
+            annotationView?.isEnabled = true               // Enable tap
         } else {
             annotationView?.annotation = annotation
         }
@@ -689,9 +705,9 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         // INSTANT deselect - no animation for maximum speed
         view.isSelected = false
         
-        // INSTANT haptic feedback for premium feel (like Instagram/BeReal)
-        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-        impactFeedback.impactOccurred()
+        // INSTANT haptic feedback using pre-prepared generator (NO delay)
+        self.hapticGenerator?.impactOccurred()
+        self.hapticGenerator?.prepare()  // Prepare for next tap
         
         // Notify JS layer about marker tap
         var tapData: [String: Any] = [
