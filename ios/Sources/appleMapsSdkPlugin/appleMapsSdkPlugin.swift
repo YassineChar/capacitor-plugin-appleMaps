@@ -248,12 +248,11 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                         annotation.markerSize = CGFloat(markerSize)
                     }
                     
-                    // Support whisperId for navigation on tap
                     if let whisperId = point["whisperId"] as? String {
                         annotation.whisperId = whisperId
                     }
                     
-                    // Support isClickable flag for out-of-range whispers
+                    // Support isClickable flag for markers that should not trigger interactions
                     if let isClickable = point["isClickable"] as? Bool {
                         annotation.isClickable = isClickable
                     }
@@ -682,8 +681,12 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             return
         }
         
-        // Deselect immediately (we don't want selection state)
-        mapView.deselectAnnotation(annotation, animated: false)
+        // INSTANT deselect - no animation for maximum speed
+        view.isSelected = false
+        
+        // INSTANT haptic feedback for premium feel (like Instagram/BeReal)
+        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+        impactFeedback.impactOccurred()
         
         // Notify JS layer about marker tap
         var tapData: [String: Any] = [
@@ -692,7 +695,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             "title": annotation.title ?? ""
         ]
         
-        // Add whisperId and isClickable if available
+        // Add marker ID and isClickable if available
         if let whisperId = annotation.whisperId {
             tapData["whisperId"] = whisperId
         }
@@ -700,7 +703,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         
         notifyListeners("onMarkerTap", data: tapData)
         
-        print("📍 [MapKit] Marker tapped - whisperId: \(annotation.whisperId ?? "none"), isClickable: \(annotation.isClickable)")
+        print("📍 [MapKit] Marker tapped - ID: \(annotation.whisperId ?? "none"), isClickable: \(annotation.isClickable)")
     }
     
     /**
