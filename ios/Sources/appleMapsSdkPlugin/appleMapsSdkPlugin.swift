@@ -270,7 +270,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
      * MKMapViewDelegate method for custom marker rendering with clustering support.
      *
      * This method handles both individual markers and cluster annotations:
-     * - Individual markers: Colored based on expiryColor property (red/yellow/green)
+     * - Individual markers: Custom circular image with profile photo and colored border
      * - Cluster markers: Purple badges with count of grouped markers
      *
      * Clustering is automatically managed by MapKit when clusteringIdentifier is set.
@@ -284,58 +284,148 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         if annotation is MKUserLocation {
             return nil
         }
-        
-        // Handle cluster annotations (grouped markers)
-        if let cluster = annotation as? MKClusterAnnotation {
-            let identifier = "Cluster"
-            var clusterView = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
-            
-            if clusterView == nil {
-                clusterView = MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
-                clusterView?.canShowCallout = true
-            } else {
-                clusterView?.annotation = annotation
-            }
-            
-            // Generate dynamic cluster image with member count
-            let count = cluster.memberAnnotations.count
-            clusterView?.image = generateClusterImage(count: count)
-            
-            return clusterView
-        }
-        
-        // Handle individual custom markers
+
+        // Custom marker handling
         guard let customAnnotation = annotation as? CustomPointAnnotation else {
             return nil
         }
-        
+
         let identifier = "CustomMarker"
-        var annotationView = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView
-        
+        var annotationView = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
+
         if annotationView == nil {
-            annotationView = MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: identifier)
-            annotationView?.canShowCallout = true
-            // Enable clustering - markers with same identifier will be automatically grouped
-            annotationView?.clusteringIdentifier = "whisperCluster"
+            annotationView = MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
+            annotationView?.canShowCallout = false         // no Apple balloon
+            annotationView?.clusteringIdentifier = nil     // disable native clustering
         } else {
             annotationView?.annotation = annotation
         }
-        
-        // Apply color based on expiry status
-        if let expiryColor = customAnnotation.expiryColor {
-            switch expiryColor.lowercased() {
-            case "red":
-                annotationView?.markerTintColor = UIColor.red
-            case "yellow":
-                annotationView?.markerTintColor = UIColor.systemYellow
-            case "green":
-                annotationView?.markerTintColor = UIColor.systemGreen
-            default:
-                annotationView?.markerTintColor = UIColor.systemBlue
+
+        let borderColor = getBorderColorFromExpiry(customAnnotation.expiryColor)
+
+        // set fallback image (colored circle)
+        annotationView?.image = self.generateCircularMarkerImage(
+            profileImage: nil,
+            borderColor: borderColor,
+            size: 80
+        )
+
+        // load profile image (asynchronous)
+        if let iconUrl = customAnnotation.iconUrl, !iconUrl.isEmpty {
+            loadImageAsync(from: iconUrl) { [weak annotationView] image in
+                guard let annotationView = annotationView else { return }
+                annotationView.image = self.generateCircularMarkerImage(
+                    profileImage: image,
+                    borderColor: borderColor,
+                    size: 80
+                )
             }
         }
-        
+
         return annotationView
+    }
+    
+    private func getBorderColorFromExpiry(_ expiryColor: String?) -> UIColor {
+        guard let color = expiryColor?.lowercased() else {
+            return UIColor.systemGreen
+        }
+        
+        switch color {
+        case "red":
+            return UIColor(red: 244/255, green: 67/255, blue: 54/255, alpha: 1.0)
+        case "yellow":
+            return UIColor(red: 255/255, green: 235/255, blue: 59/255, alpha: 1.0)
+        case "green":
+            return UIColor(red: 76/255, green: 175/255, blue: 80/255, alpha: 1.0)
+        default:
+            return UIColor.systemBlue
+        }
+    }
+    
+    private func generateCircularMarkerImage(profileImage: UIImage?, borderColor: UIColor, size: CGFloat) -> UIImage {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+        
+        return renderer.image { context in
+            let rect = CGRect(origin: .zero, size: CGSize(width: size, height: size))
+            let circlePath = UIBezierPath(ovalIn: rect.insetBy(dx: 3, dy: 3))
+            
+            // Clip to circle
+            circlePath.addClip()
+            
+            if let profileImage = profileImage {
+                // Draw profile photo
+                profileImage.draw(in: rect.insetBy(dx: 3, dy: 3))
+            } else {
+                // Fallback: generate default avatar with user icon (matching header design)
+                let avatarColors = [
+                    UIColor(red: 0.95, green: 0.32, blue: 0.31, alpha: 1.0),
+                    UIColor(red: 0.91, green: 0.30, blue: 0.57, alpha: 1.0),
+                    UIColor(red: 0.67, green: 0.32, blue: 0.89, alpha: 1.0),
+                    UIColor(red: 0.40, green: 0.45, blue: 0.98, alpha: 1.0),
+                    UIColor(red: 0.25, green: 0.60, blue: 0.96, alpha: 1.0),
+                    UIColor(red: 0.15, green: 0.76, blue: 0.88, alpha: 1.0),
+                    UIColor(red: 0.15, green: 0.82, blue: 0.61, alpha: 1.0),
+                    UIColor(red: 0.53, green: 0.76, blue: 0.29, alpha: 1.0),
+                    UIColor(red: 0.99, green: 0.77, blue: 0.25, alpha: 1.0),
+                    UIColor(red: 1.00, green: 0.60, blue: 0.20, alpha: 1.0)
+                ]
+                
+                // Use first color for default avatar
+                let backgroundColor = avatarColors[0]
+                backgroundColor.setFill()
+                circlePath.fill()
+                
+                // Draw default user icon (head + body circles)
+                UIColor.white.setFill()
+                
+                // Head circle
+                let headRadius = (size - 6) * 0.15
+                let headCenter = CGPoint(x: size / 2, y: (size - 6) * 0.35 + 3)
+                let headCircle = UIBezierPath(ovalIn: CGRect(
+                    x: headCenter.x - headRadius,
+                    y: headCenter.y - headRadius,
+                    width: headRadius * 2,
+                    height: headRadius * 2
+                ))
+                headCircle.fill()
+                
+                // Body circle
+                let bodyRadius = (size - 6) * 0.25
+                let bodyCenter = CGPoint(x: size / 2, y: (size - 6) * 0.75 + 3)
+                let bodyCircle = UIBezierPath(ovalIn: CGRect(
+                    x: bodyCenter.x - bodyRadius,
+                    y: bodyCenter.y - bodyRadius,
+                    width: bodyRadius * 2,
+                    height: bodyRadius * 2
+                ))
+                bodyCircle.fill()
+            }
+            
+            // Draw border
+            borderColor.setStroke()
+            circlePath.lineWidth = 3
+            circlePath.stroke()
+        }
+    }
+    
+    private func loadImageAsync(from urlString: String, completion: @escaping (UIImage?) -> Void) {
+        guard let url = URL(string: urlString) else {
+            completion(nil)
+            return
+        }
+        
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            guard let data = data, error == nil, let image = UIImage(data: data) else {
+                DispatchQueue.main.async {
+                    completion(nil)
+                }
+                return
+            }
+            
+            DispatchQueue.main.async {
+                completion(image)
+            }
+        }.resume()
     }
     
     /**
