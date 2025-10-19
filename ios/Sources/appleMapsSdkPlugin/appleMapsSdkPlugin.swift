@@ -11,6 +11,7 @@ import CoreLocation
  * - iconUrl: Optional URL string for custom marker icons
  * - expiryColor: Optional color string ("red", "yellow", "green") to indicate content expiry status
  * - markerSize: Optional size in pixels for the marker (default 60)
+ * - whisperId: Unique identifier for this marker (for navigation/interaction)
  */
 class CustomPointAnnotation: MKPointAnnotation {
     var iconUrl: String?
@@ -248,10 +249,10 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                         annotation.markerSize = CGFloat(markerSize)
                     }
                     
+                    // Support unique whisper ID for navigation on tap 
                     if let whisperId = point["whisperId"] as? String {
                         annotation.whisperId = whisperId
                     }
-                    
                     // Support isClickable flag for markers that should not trigger interactions
                     if let isClickable = point["isClickable"] as? Bool {
                         annotation.isClickable = isClickable
@@ -310,9 +311,12 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
      * @return MKAnnotationView configured for the annotation, or nil for user location
      */
     public func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-        // Don't customize user location marker
+        // Don't customize user location marker - return nil to block callout and prevent tap interception
         if annotation is MKUserLocation {
-            return nil
+            let userView = mapView.view(for: annotation) as? MKAnnotationView
+            userView?.canShowCallout = false  // Disable Apple's default callout popup
+            userView?.displayPriority = .defaultLow  // Lower priority so custom markers are tappable on top
+            return userView
         }
 
         // Custom marker handling
@@ -327,6 +331,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             annotationView = MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
             annotationView?.canShowCallout = false         // no Apple balloon
             annotationView?.clusteringIdentifier = nil     // disable native clustering
+            annotationView?.displayPriority = .required    // Higher priority than user location
         } else {
             annotationView?.annotation = annotation
         }
