@@ -609,6 +609,32 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         }
     }
     
+    @objc func setCenterPoint(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let mapView = self.mapView else {
+                call.reject("Map is not initialized")
+                return
+            }
+            
+            guard let latitude = call.getDouble("latitude"),
+                  let longitude = call.getDouble("longitude") else {
+                call.reject("latitude and longitude are required")
+                return
+            }
+            
+            let animated = call.getBool("animated") ?? true
+            
+            let center = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+            let region = MKCoordinateRegion(
+                center: center,
+                span: mapView.region.span
+            )
+            
+            mapView.setRegion(region, animated: animated)
+            call.resolve(["status": "success"])
+        }
+    }
+    
     /**
      * Add a circle overlay to the map (used for user radius visualization).
      *
