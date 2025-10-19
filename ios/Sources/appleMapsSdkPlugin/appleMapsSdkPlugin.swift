@@ -151,6 +151,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                     subview.isUserInteractionEnabled = false
                 }
             }
+        }
         
         // Make webview background transparent so map shows through
         webView.isOpaque = false
