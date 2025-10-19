@@ -42,6 +42,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         CAPPluginMethod(name: "hideAppleMaps", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setValuesAppleMaps", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setCenterPoint", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setCenterAndZoom", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setZoomLevel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "addCircle", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "removeCircle", returnType: CAPPluginReturnPromise),
@@ -628,6 +629,39 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             let region = MKCoordinateRegion(
                 center: center,
                 span: mapView.region.span
+            )
+            
+            mapView.setRegion(region, animated: animated)
+            call.resolve(["status": "success"])
+        }
+    }
+    
+    @objc func setCenterAndZoom(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let mapView = self.mapView else {
+                call.reject("Map is not initialized")
+                return
+            }
+            
+            guard let latitude = call.getDouble("latitude"),
+                  let longitude = call.getDouble("longitude"),
+                  let zoom = call.getDouble("zoom") else {
+                call.reject("latitude, longitude, and zoom are required")
+                return
+            }
+            
+            let animated = call.getBool("animated") ?? true
+            
+            let center = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+            
+            // Convert web zoom to MapKit span (same logic as setZoomLevel)
+            let baseSpan = 0.05
+            let zoomFactor = pow(2.0, 14.0 - zoom)
+            let span = baseSpan * zoomFactor
+            
+            let region = MKCoordinateRegion(
+                center: center,
+                span: MKCoordinateSpan(latitudeDelta: span, longitudeDelta: span)
             )
             
             mapView.setRegion(region, animated: animated)
