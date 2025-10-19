@@ -307,7 +307,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         annotationView?.image = self.generateCircularMarkerImage(
             profileImage: nil,
             borderColor: borderColor,
-            size: 80
+            size: 40
         )
 
         // load profile image (asynchronous)
@@ -317,7 +317,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 annotationView.image = self.generateCircularMarkerImage(
                     profileImage: image,
                     borderColor: borderColor,
-                    size: 80
+                    size: 40
                 )
             }
         }
@@ -542,14 +542,17 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             
             // Remove existing circle if present
             if let existingCircle = self.userCircle {
+                print("🔵 [MapKit] Removing existing circle")
                 mapView.removeOverlay(existingCircle)
             }
             
             let center = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
             let circle = MKCircle(center: center, radius: radius)
             
+            print("🔵 [MapKit] Adding circle at: \(latitude), \(longitude) with radius: \(radius)m")
             self.userCircle = circle
             mapView.addOverlay(circle)
+            print("✅ [MapKit] Circle overlay added to map")
             
             call.resolve(["status": "success", "circleId": "user-circle"])
         }
@@ -592,16 +595,42 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
     }
     
     /**
+     * MKMapViewDelegate method for handling annotation selection (tap).
+     *
+     * Triggers when user taps on a marker. Notifies JS layer via bridge event.
+     */
+    public func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
+        // Ignore user location taps
+        guard let annotation = view.annotation as? CustomPointAnnotation else {
+            return
+        }
+        
+        // Deselect immediately (we don't want selection state)
+        mapView.deselectAnnotation(annotation, animated: false)
+        
+        // Notify JS layer about marker tap
+        notifyListeners("onMarkerTap", data: [
+            "latitude": annotation.coordinate.latitude,
+            "longitude": annotation.coordinate.longitude,
+            "title": annotation.title ?? ""
+        ])
+        
+        print("📍 [MapKit] Marker tapped at: \(annotation.coordinate.latitude), \(annotation.coordinate.longitude)")
+    }
+    
+    /**
      * MKMapViewDelegate method for rendering circle overlays.
      *
      * Renders user radius circle with custom colors.
      */
     public func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
         if let circle = overlay as? MKCircle {
+            print("🔵 [MapKit] Rendering circle overlay - radius: \(circle.radius)m")
             let renderer = MKCircleRenderer(circle: circle)
             renderer.strokeColor = UIColor(red: 0, green: 229/255, blue: 255/255, alpha: 1.0)
             renderer.fillColor = UIColor(red: 0, green: 229/255, blue: 255/255, alpha: 0.3)
             renderer.lineWidth = 2
+            print("✅ [MapKit] Circle renderer created with stroke color and fill")
             return renderer
         }
         return MKOverlayRenderer(overlay: overlay)
