@@ -316,22 +316,22 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
      * @return MKAnnotationView configured for the annotation, or nil for user location
      */
     public func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-        // Block user location callout - create custom view with no interaction
+        // Use default blue dot for user location BUT disable callout
         if annotation is MKUserLocation {
             let identifier = "UserLocation"
-            var userView = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKAnnotationView
+            var userView = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKUserLocationView
             
             if userView == nil {
-                userView = MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
+                userView = MKUserLocationView(annotation: annotation, reuseIdentifier: identifier)
             } else {
                 userView?.annotation = annotation
             }
             
-            userView?.canShowCallout = false  // NO CALLOUT
-            userView?.isEnabled = false       // NO INTERACTION
-            userView?.displayPriority = .defaultLow  // Lower priority than custom markers
+            // Block callout and lower priority (so custom markers are tappable on top)
+            userView?.canShowCallout = false
+            userView?.displayPriority = .defaultLow
             
-            return userView
+            return userView  // Return configured MKUserLocationView (blue dot without callout)
         }
 
         // Custom marker handling
@@ -725,6 +725,15 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         notifyListeners("onMarkerTap", data: tapData)
         
         print("📍 [MapKit] Marker tapped - ID: \(annotation.whisperId ?? "none"), isClickable: \(annotation.isClickable)")
+    }
+    
+    /**
+     * MKMapViewDelegate method to block user location selection.
+     *
+     * Prevents callout popup and any interaction with user location marker.
+     */
+    public func mapView(_ mapView: MKMapView, didDeselect view: MKAnnotationView) {
+        // Block user location deselection handling (prevent any UI feedback)
     }
     
     /**
