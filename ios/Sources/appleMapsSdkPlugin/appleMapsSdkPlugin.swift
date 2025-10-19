@@ -14,6 +14,8 @@ import CoreLocation
  */
 class CustomPointAnnotation: MKPointAnnotation {
     var iconUrl: String?
+    var initials: String?
+    var avatarColor: String?
     var expiryColor: String?
     var markerSize: CGFloat = 60
 }
@@ -224,6 +226,16 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                         annotation.iconUrl = iconUrl
                     }
                     
+                    // Support initials for text-based avatar fallback
+                    if let initials = point["initials"] as? String {
+                        annotation.initials = initials
+                    }
+                    
+                    // Support avatar background color for initials
+                    if let avatarColor = point["avatarColor"] as? String {
+                        annotation.avatarColor = avatarColor
+                    }
+                    
                     // Support expiry color for visual status indication (red/yellow/green)
                     if let expiryColor = point["expiryColor"] as? String {
                         annotation.expiryColor = expiryColor
@@ -310,10 +322,15 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
 
         let borderColor = getBorderColorFromExpiry(customAnnotation.expiryColor)
         let markerSize = customAnnotation.markerSize
+        
+        // Parse avatarColor from hex string
+        let avatarBgColor = customAnnotation.avatarColor.flatMap { parseHexColor($0) }
 
-        // set fallback image (colored circle)
+        // set fallback image (with initials if available)
         annotationView?.image = self.generateCircularMarkerImage(
             profileImage: nil,
+            initials: customAnnotation.initials,
+            avatarColor: avatarBgColor,
             borderColor: borderColor,
             size: markerSize
         )
@@ -324,6 +341,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 guard let annotationView = annotationView else { return }
                 annotationView.image = self.generateCircularMarkerImage(
                     profileImage: image,
+                    initials: nil,
+                    avatarColor: nil,
                     borderColor: borderColor,
                     size: markerSize
                 )
@@ -350,7 +369,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         }
     }
     
-    private func generateCircularMarkerImage(profileImage: UIImage?, borderColor: UIColor, size: CGFloat) -> UIImage {
+    private func generateCircularMarkerImage(profileImage: UIImage?, initials: String?, avatarColor: UIColor?, borderColor: UIColor, size: CGFloat) -> UIImage {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
         
         return renderer.image { context in
@@ -363,23 +382,31 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             if let profileImage = profileImage {
                 // Draw profile photo
                 profileImage.draw(in: rect.insetBy(dx: 3, dy: 3))
-            } else {
-                // Fallback: generate default avatar with user icon (matching header design)
-                let avatarColors = [
-                    UIColor(red: 0.95, green: 0.32, blue: 0.31, alpha: 1.0),
-                    UIColor(red: 0.91, green: 0.30, blue: 0.57, alpha: 1.0),
-                    UIColor(red: 0.67, green: 0.32, blue: 0.89, alpha: 1.0),
-                    UIColor(red: 0.40, green: 0.45, blue: 0.98, alpha: 1.0),
-                    UIColor(red: 0.25, green: 0.60, blue: 0.96, alpha: 1.0),
-                    UIColor(red: 0.15, green: 0.76, blue: 0.88, alpha: 1.0),
-                    UIColor(red: 0.15, green: 0.82, blue: 0.61, alpha: 1.0),
-                    UIColor(red: 0.53, green: 0.76, blue: 0.29, alpha: 1.0),
-                    UIColor(red: 0.99, green: 0.77, blue: 0.25, alpha: 1.0),
-                    UIColor(red: 1.00, green: 0.60, blue: 0.20, alpha: 1.0)
+            } else if let initials = initials, !initials.isEmpty, initials != "?" {
+                // Draw initials with background color (like header design)
+                let backgroundColor = avatarColor ?? UIColor(red: 0.95, green: 0.32, blue: 0.31, alpha: 1.0)
+                backgroundColor.setFill()
+                circlePath.fill()
+                
+                // Draw white text initials
+                let fontSize = size * 0.4
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.systemFont(ofSize: fontSize, weight: .semibold),
+                    .foregroundColor: UIColor.white
                 ]
                 
-                // Use first color for default avatar
-                let backgroundColor = avatarColors[0]
+                let textSize = (initials as NSString).size(withAttributes: attributes)
+                let textRect = CGRect(
+                    x: (size - textSize.width) / 2,
+                    y: (size - textSize.height) / 2,
+                    width: textSize.width,
+                    height: textSize.height
+                )
+                
+                (initials as NSString).draw(in: textRect, withAttributes: attributes)
+            } else {
+                // Fallback: generate default avatar with user icon (generic)
+                let backgroundColor = avatarColor ?? UIColor(red: 0.61, green: 0.64, blue: 0.69, alpha: 1.0) // #9CA3AF
                 backgroundColor.setFill()
                 circlePath.fill()
                 
@@ -414,6 +441,36 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             circlePath.lineWidth = 3
             circlePath.stroke()
         }
+    }
+    
+    private func parseHexColor(_ hex: String) -> UIColor? {
+        var hexFormatted = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        hexFormatted = hexFormatted.replacingOccurrences(of: "#", with: "")
+        
+        var rgb: UInt64 = 0
+        
+        guard Scanner(string: hexFormatted).scanHexInt64(&rgb) else {
+            return nil
+        }
+        
+        let length = hexFormatted.count
+        let r, g, b, a: CGFloat
+        
+        if length == 6 {
+            r = CGFloat((rgb & 0xFF0000) >> 16) / 255.0
+            g = CGFloat((rgb & 0x00FF00) >> 8) / 255.0
+            b = CGFloat(rgb & 0x0000FF) / 255.0
+            a = 1.0
+        } else if length == 8 {
+            r = CGFloat((rgb & 0xFF000000) >> 24) / 255.0
+            g = CGFloat((rgb & 0x00FF0000) >> 16) / 255.0
+            b = CGFloat((rgb & 0x0000FF00) >> 8) / 255.0
+            a = CGFloat(rgb & 0x000000FF) / 255.0
+        } else {
+            return nil
+        }
+        
+        return UIColor(red: r, green: g, blue: b, alpha: a)
     }
     
     private func loadImageAsync(from urlString: String, completion: @escaping (UIImage?) -> Void) {
