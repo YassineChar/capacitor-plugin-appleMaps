@@ -146,7 +146,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         viewController.view.insertSubview(mapView, belowSubview: webView)
 
         // Disable user interaction on Apple’s blue location dot (so whispers above it can be tapped)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             self.mapView?.subviews.forEach { subview in
                 if NSStringFromClass(type(of: subview)).contains("UserLocationView") {
                     subview.isUserInteractionEnabled = false
@@ -326,13 +326,17 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
      * @return MKAnnotationView configured for the annotation, or nil for user location
      */
     public func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-        // Use default blue dot for user location BUT disable callout
+        // Use Apple's default blue dot but disable interaction after it's added
         if annotation is MKUserLocation {
-            let view = MKAnnotationView(annotation: annotation, reuseIdentifier: "UserLocationView")
-            view.canShowCallout = false
-            view.isEnabled = false
-            view.isUserInteractionEnabled = false
-            return view
+            // Use Apple's default blue dot but disable interaction after it's added
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                mapView.subviews.forEach { subview in
+                    if NSStringFromClass(type(of: subview)).contains("UserLocationView") {
+                        subview.isUserInteractionEnabled = false
+                    }
+                }
+            }
+            return nil
         }
 
         // Custom marker handling
