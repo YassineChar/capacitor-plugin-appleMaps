@@ -811,6 +811,36 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
     }
     
     /**
+     * MKMapViewDelegate method for tracking map region changes.
+     *
+     * Shows/hides recenter button based on distance from user location.
+     * If map center is more than 100m from user location, show button.
+     */
+    public func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+        guard let userLocation = mapView.userLocation.location else { return }
+        
+        let mapCenter = mapView.centerCoordinate
+        let userCoordinate = userLocation.coordinate
+        
+        // Calculate distance between map center and user location
+        let mapCenterLocation = CLLocation(latitude: mapCenter.latitude, longitude: mapCenter.longitude)
+        let userCLLocation = CLLocation(latitude: userCoordinate.latitude, longitude: userCoordinate.longitude)
+        let distance = mapCenterLocation.distance(from: userCLLocation)
+        
+        // Show recenter button if distance > 100m, hide if < 50m (hysteresis)
+        let showThreshold: CLLocationDistance = 100
+        let hideThreshold: CLLocationDistance = 50
+        
+        if distance > showThreshold {
+            // User moved away from their location
+            notifyListeners("showRecenterButton", data: [:])
+        } else if distance < hideThreshold {
+            // User is close to their location
+            notifyListeners("hideRecenterButton", data: [:])
+        }
+    }
+    
+    /**
      * INSTANT tap handler - processes touches BEFORE MapKit's didSelect delegate.
      * 
      * This method intercepts tap gestures at the UIView level, allowing us to:
