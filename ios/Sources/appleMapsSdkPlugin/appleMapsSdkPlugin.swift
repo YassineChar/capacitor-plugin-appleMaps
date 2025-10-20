@@ -328,7 +328,11 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
     public func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
         // Use default blue dot for user location BUT disable callout
         if annotation is MKUserLocation {
-            return nil
+            let view = MKAnnotationView(annotation: annotation, reuseIdentifier: "UserLocationView")
+            view.canShowCallout = false
+            view.isEnabled = false
+            view.isUserInteractionEnabled = false
+            return view
         }
 
         // Custom marker handling
