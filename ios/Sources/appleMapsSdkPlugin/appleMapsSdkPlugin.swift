@@ -333,17 +333,20 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
      * @return MKAnnotationView configured for the annotation, or nil for user location
      */
     public func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-        // Use Apple's default blue dot but disable interaction after it's added
+        // Custom view for user location to BLOCK callout completely
         if annotation is MKUserLocation {
-            // Use Apple's default blue dot but disable interaction after it's added
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                mapView.subviews.forEach { subview in
-                    if NSStringFromClass(type(of: subview)).contains("UserLocationView") {
-                        subview.isUserInteractionEnabled = false
-                    }
-                }
+            let identifier = "UserLocationView"
+            var userView = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
+            
+            if userView == nil {
+                userView = MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
+                userView?.canShowCallout = false  // NO CALLOUT
+                userView?.isEnabled = false       // NO INTERACTION
+                
+                userView?.image = nil  // nil = use system default blue dot
             }
-            return nil
+            
+            return userView
         }
 
         // Custom marker handling
