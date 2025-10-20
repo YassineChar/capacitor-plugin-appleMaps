@@ -835,17 +835,18 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             // Convert annotation coordinate to screen point
             let annotationPoint = mapView.convert(annotation.coordinate, toPointTo: mapView)
             
-            // Hit test with marker bounds (60x60 default size)
+            // Expand hit area by 50% for easier tapping
             let markerSize = customAnnotation.markerSize
+            let expandedHitSize = markerSize * 1.5
             let hitRect = CGRect(
-                x: annotationPoint.x - markerSize / 2,
-                y: annotationPoint.y - markerSize,
-                width: markerSize,
-                height: markerSize
+                x: annotationPoint.x - expandedHitSize / 2,
+                y: annotationPoint.y - expandedHitSize / 2,  // CENTERED vertically
+                width: expandedHitSize,
+                height: expandedHitSize
             )
             
             if hitRect.contains(touchPoint) {
-                // INSTANT notification (don't wait for didSelect)
+                // INSTANT notification 
                 var tapData: [String: Any] = [
                     "latitude": customAnnotation.coordinate.latitude,
                     "longitude": customAnnotation.coordinate.longitude,
