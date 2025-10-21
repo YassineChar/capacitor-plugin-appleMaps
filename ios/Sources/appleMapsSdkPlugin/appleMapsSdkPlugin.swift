@@ -351,7 +351,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 
                 // Clean, simple design - just blue dot with white border
                 let dotSize: CGFloat = 16
-                let containerSize: CGFloat = 20
+                let borderWidth: CGFloat = 2
+                let containerSize = dotSize + (borderWidth * 2) + 4 // Extra padding for perfect circle
                 
                 let containerView = UIView(frame: CGRect(
                     x: 0, y: 0,
@@ -360,7 +361,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 ))
                 containerView.backgroundColor = .clear
                 
-                // Simple blue dot with white border
+                // Simple blue dot with white border (perfectly centered)
                 let dotView = UIView(frame: CGRect(
                     x: (containerSize - dotSize) / 2,
                     y: (containerSize - dotSize) / 2,
@@ -369,7 +370,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 ))
                 dotView.backgroundColor = UIColor(red: 0.0, green: 0.48, blue: 1.0, alpha: 1.0)
                 dotView.layer.cornerRadius = dotSize / 2
-                dotView.layer.borderWidth = 2
+                dotView.layer.borderWidth = borderWidth
                 dotView.layer.borderColor = UIColor.white.cgColor
                 
                 containerView.addSubview(dotView)
