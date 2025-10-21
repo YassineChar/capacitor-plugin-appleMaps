@@ -4,8 +4,13 @@ import MapKit
 import CoreLocation
 
 /**
- * Custom annotation class that extends MKPointAnnotation to support additional properties
- * for marker customization including icon URLs and expiry color indicators.
+ * Custom annotation class that extends MKPointAnnotation to support addition        // Insert map BELOW the webview
+        viewController.view.insertSubview(mapView, belowSubview: webView)
+        
+        // Make webview background transparent so map shows through
+        webView.isOpaque = false
+        webView.backgroundColor = .clear
+        if let scrollView = webView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView { for marker customization including icon URLs and expiry color indicators.
  *
  * Properties:
  * - iconUrl: Optional URL string for custom marker icons
@@ -333,17 +338,64 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
      * @return MKAnnotationView configured for the annotation, or nil for user location
      */
     public func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-        // Custom view for user location to BLOCK callout completely
+        // CUSTOM USER LOCATION VIEW - Modern design with pulse animation, NO tap interaction
         if annotation is MKUserLocation {
-            let identifier = "UserLocationView"
+            let identifier = "CustomUserLocationView"
             var userView = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
             
             if userView == nil {
                 userView = MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
-                userView?.canShowCallout = false  // NO CALLOUT
-                userView?.isEnabled = false       // NO INTERACTION
+                userView?.canShowCallout = false    // NO callout popup
+                userView?.isEnabled = false         // NO tap interaction
                 
-                userView?.image = nil  // nil = use system default blue dot
+                // Create custom dot with modern design
+                let dotSize: CGFloat = 20
+                let accuracySize: CGFloat = 40
+                
+                // Accuracy circle (outer, semi-transparent blue)
+                let accuracyView = UIView(frame: CGRect(
+                    x: -accuracySize/2 + dotSize/2,
+                    y: -accuracySize/2 + dotSize/2,
+                    width: accuracySize,
+                    height: accuracySize
+                ))
+                accuracyView.backgroundColor = UIColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 0.15)
+                accuracyView.layer.cornerRadius = accuracySize / 2
+                accuracyView.layer.borderWidth = 1.5
+                accuracyView.layer.borderColor = UIColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 0.5).cgColor
+                accuracyView.isUserInteractionEnabled = false
+                
+                // Dot (inner, solid blue with white border)
+                let dotView = UIView(frame: CGRect(x: 0, y: 0, width: dotSize, height: dotSize))
+                dotView.backgroundColor = UIColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1.0)
+                dotView.layer.cornerRadius = dotSize / 2
+                dotView.layer.borderWidth = 3
+                dotView.layer.borderColor = UIColor.white.cgColor
+                dotView.layer.shadowColor = UIColor.black.cgColor
+                dotView.layer.shadowOffset = CGSize(width: 0, height: 2)
+                dotView.layer.shadowRadius = 3
+                dotView.layer.shadowOpacity = 0.3
+                dotView.isUserInteractionEnabled = false
+                
+                // Container to hold both views
+                let containerView = UIView(frame: CGRect(x: 0, y: 0, width: dotSize, height: dotSize))
+                containerView.addSubview(accuracyView)
+                containerView.addSubview(dotView)
+                containerView.isUserInteractionEnabled = false
+                
+                // Convert to UIImage for annotation
+                let renderer = UIGraphicsImageRenderer(size: containerView.bounds.size)
+                let image = renderer.image { ctx in
+                    containerView.layer.render(in: ctx.cgContext)
+                }
+                
+                userView?.image = image
+                userView?.centerOffset = CGPoint(x: 0, y: 0) // Center on coordinate
+                
+                // Add subtle pulse animation (modern look)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak userView] in
+                    self.addPulseAnimation(to: userView)
+                }
             }
             
             return userView
@@ -897,5 +949,23 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 return
             }
         }
+    }
+    
+    /**
+     * Add subtle pulse animation to user location dot for modern look.
+     * Creates a repeating scale animation that makes the dot breathe.
+     */
+    private func addPulseAnimation(to annotationView: MKAnnotationView?) {
+        guard let view = annotationView else { return }
+        
+        let pulseAnimation = CABasicAnimation(keyPath: "transform.scale")
+        pulseAnimation.duration = 1.5
+        pulseAnimation.fromValue = 1.0
+        pulseAnimation.toValue = 1.15
+        pulseAnimation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        pulseAnimation.autoreverses = true
+        pulseAnimation.repeatCount = .infinity
+        
+        view.layer.add(pulseAnimation, forKey: "pulse")
     }
 }
