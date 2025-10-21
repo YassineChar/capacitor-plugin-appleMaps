@@ -338,7 +338,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
      * @return MKAnnotationView configured for the annotation, or nil for user location
      */
     public func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-        // CUSTOM USER LOCATION VIEW - Modern design with pulse animation, NO tap interaction
+        // CUSTOM USER LOCATION VIEW - Modern, clean design with NO tap interaction
         if annotation is MKUserLocation {
             let identifier = "CustomUserLocationView"
             var userView = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
@@ -347,53 +347,68 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 userView = MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
                 userView?.canShowCallout = false    // NO callout popup
                 userView?.isEnabled = false         // NO tap interaction
+                userView?.zPriority = .min          // CRITICAL: Below whisper markers
                 
-                // Create custom dot with modern design
-                let dotSize: CGFloat = 20
-                let accuracySize: CGFloat = 40
+                // Modern, clean design inspired by Apple Maps
+                let dotSize: CGFloat = 18           // Clean, not too small
+                let accuracySize: CGFloat = 60      // Visible accuracy circle
+                
+                // Container to hold everything (MUST be large enough for accuracy circle)
+                let containerSize = accuracySize + 10 // Extra space for shadows
+                let containerView = UIView(frame: CGRect(
+                    x: 0, y: 0,
+                    width: containerSize,
+                    height: containerSize
+                ))
+                containerView.backgroundColor = .clear
+                containerView.isUserInteractionEnabled = false
                 
                 // Accuracy circle (outer, semi-transparent blue)
                 let accuracyView = UIView(frame: CGRect(
-                    x: -accuracySize/2 + dotSize/2,
-                    y: -accuracySize/2 + dotSize/2,
+                    x: (containerSize - accuracySize) / 2,
+                    y: (containerSize - accuracySize) / 2,
                     width: accuracySize,
                     height: accuracySize
                 ))
-                accuracyView.backgroundColor = UIColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 0.15)
+                accuracyView.backgroundColor = UIColor(red: 0.0, green: 0.48, blue: 1.0, alpha: 0.1)
                 accuracyView.layer.cornerRadius = accuracySize / 2
-                accuracyView.layer.borderWidth = 1.5
-                accuracyView.layer.borderColor = UIColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 0.5).cgColor
+                accuracyView.layer.borderWidth = 1.0
+                accuracyView.layer.borderColor = UIColor(red: 0.0, green: 0.48, blue: 1.0, alpha: 0.3).cgColor
                 accuracyView.isUserInteractionEnabled = false
                 
-                // Dot (inner, solid blue with white border)
-                let dotView = UIView(frame: CGRect(x: 0, y: 0, width: dotSize, height: dotSize))
-                dotView.backgroundColor = UIColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1.0)
+                // Dot (inner, solid blue with white border) - CENTERED
+                let dotView = UIView(frame: CGRect(
+                    x: (containerSize - dotSize) / 2,
+                    y: (containerSize - dotSize) / 2,
+                    width: dotSize,
+                    height: dotSize
+                ))
+                dotView.backgroundColor = UIColor(red: 0.0, green: 0.48, blue: 1.0, alpha: 1.0)
                 dotView.layer.cornerRadius = dotSize / 2
-                dotView.layer.borderWidth = 3
+                dotView.layer.borderWidth = 2.5
                 dotView.layer.borderColor = UIColor.white.cgColor
                 dotView.layer.shadowColor = UIColor.black.cgColor
-                dotView.layer.shadowOffset = CGSize(width: 0, height: 2)
-                dotView.layer.shadowRadius = 3
-                dotView.layer.shadowOpacity = 0.3
+                dotView.layer.shadowOffset = CGSize(width: 0, height: 1)
+                dotView.layer.shadowRadius = 2
+                dotView.layer.shadowOpacity = 0.25
                 dotView.isUserInteractionEnabled = false
                 
-                // Container to hold both views
-                let containerView = UIView(frame: CGRect(x: 0, y: 0, width: dotSize, height: dotSize))
+                // Add views in correct order
                 containerView.addSubview(accuracyView)
                 containerView.addSubview(dotView)
-                containerView.isUserInteractionEnabled = false
                 
-                // Convert to UIImage for annotation
-                let renderer = UIGraphicsImageRenderer(size: containerView.bounds.size)
+                // Convert to UIImage with CORRECT size
+                let renderer = UIGraphicsImageRenderer(size: CGSize(width: containerSize, height: containerSize))
                 let image = renderer.image { ctx in
                     containerView.layer.render(in: ctx.cgContext)
                 }
                 
                 userView?.image = image
-                userView?.centerOffset = CGPoint(x: 0, y: 0) // Center on coordinate
+                userView?.frame = CGRect(x: 0, y: 0, width: containerSize, height: containerSize)
+                userView?.centerOffset = CGPoint(x: 0, y: 0) // Center perfectly on coordinate
                 
-                // Add subtle pulse animation (modern look)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak userView] in
+                // Add subtle pulse animation (delayed to avoid initial lag)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak userView] in
                     self.addPulseAnimation(to: userView)
                 }
             }
@@ -415,6 +430,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             annotationView?.clusteringIdentifier = nil     // disable native clustering
             annotationView?.displayPriority = .required    // Higher priority than user location
             annotationView?.isEnabled = true               // Enable tap
+            annotationView?.zPriority = .defaultHigh       // CRITICAL: Above user location dot
         } else {
             annotationView?.annotation = annotation
         }
@@ -952,16 +968,17 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
     }
     
     /**
-     * Add subtle pulse animation to user location dot for modern look.
-     * Creates a repeating scale animation that makes the dot breathe.
+     * Add subtle pulse animation to user location dot for modern, clean look.
+     * Creates a gentle scale animation that makes the accuracy circle breathe.
      */
     private func addPulseAnimation(to annotationView: MKAnnotationView?) {
         guard let view = annotationView else { return }
         
+        // Very subtle pulse on the accuracy circle (not the dot itself)
         let pulseAnimation = CABasicAnimation(keyPath: "transform.scale")
-        pulseAnimation.duration = 1.5
+        pulseAnimation.duration = 2.0              // Slow, gentle breathing
         pulseAnimation.fromValue = 1.0
-        pulseAnimation.toValue = 1.15
+        pulseAnimation.toValue = 1.08              // Subtle scale (8% increase)
         pulseAnimation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         pulseAnimation.autoreverses = true
         pulseAnimation.repeatCount = .infinity
