@@ -430,7 +430,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             annotationView?.clusteringIdentifier = nil     // disable native clustering
             annotationView?.displayPriority = .required    // Higher priority than user location
             annotationView?.isEnabled = true               // Enable tap
-            annotationView?.zPriority = .defaultHigh       // CRITICAL: Above user location dot
+            annotationView?.zPriority = .max               // CRITICAL: Above user location dot
         } else {
             annotationView?.annotation = annotation
         }
