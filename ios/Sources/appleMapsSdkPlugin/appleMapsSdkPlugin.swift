@@ -352,7 +352,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 // Clean, simple design - just blue dot with white border
                 let dotSize: CGFloat = 16
                 let borderWidth: CGFloat = 2
-                let containerSize = dotSize + (borderWidth * 2) + 4 // Extra padding for perfect circle
+                let containerSize = dotSize + (borderWidth * 2) + 6
                 
                 let containerView = UIView(frame: CGRect(
                     x: 0, y: 0,
