@@ -349,34 +349,18 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 userView?.isEnabled = false         // NO tap interaction
                 userView?.zPriority = .min          // CRITICAL: Below whisper markers
                 
-                // Modern, clean design inspired by Apple Maps
-                let dotSize: CGFloat = 18           // Clean, not too small
-                let accuracySize: CGFloat = 60      // Visible accuracy circle
+                // Clean, simple design - just blue dot with white border
+                let dotSize: CGFloat = 16
+                let containerSize: CGFloat = 20
                 
-                // Container to hold everything (MUST be large enough for accuracy circle)
-                let containerSize = accuracySize + 10 // Extra space for shadows
                 let containerView = UIView(frame: CGRect(
                     x: 0, y: 0,
                     width: containerSize,
                     height: containerSize
                 ))
                 containerView.backgroundColor = .clear
-                containerView.isUserInteractionEnabled = false
                 
-                // Accuracy circle (outer, semi-transparent blue)
-                let accuracyView = UIView(frame: CGRect(
-                    x: (containerSize - accuracySize) / 2,
-                    y: (containerSize - accuracySize) / 2,
-                    width: accuracySize,
-                    height: accuracySize
-                ))
-                accuracyView.backgroundColor = UIColor(red: 0.0, green: 0.48, blue: 1.0, alpha: 0.1)
-                accuracyView.layer.cornerRadius = accuracySize / 2
-                accuracyView.layer.borderWidth = 1.0
-                accuracyView.layer.borderColor = UIColor(red: 0.0, green: 0.48, blue: 1.0, alpha: 0.3).cgColor
-                accuracyView.isUserInteractionEnabled = false
-                
-                // Dot (inner, solid blue with white border) - CENTERED
+                // Simple blue dot with white border
                 let dotView = UIView(frame: CGRect(
                     x: (containerSize - dotSize) / 2,
                     y: (containerSize - dotSize) / 2,
@@ -385,19 +369,12 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 ))
                 dotView.backgroundColor = UIColor(red: 0.0, green: 0.48, blue: 1.0, alpha: 1.0)
                 dotView.layer.cornerRadius = dotSize / 2
-                dotView.layer.borderWidth = 2.5
+                dotView.layer.borderWidth = 2
                 dotView.layer.borderColor = UIColor.white.cgColor
-                dotView.layer.shadowColor = UIColor.black.cgColor
-                dotView.layer.shadowOffset = CGSize(width: 0, height: 1)
-                dotView.layer.shadowRadius = 2
-                dotView.layer.shadowOpacity = 0.25
-                dotView.isUserInteractionEnabled = false
                 
-                // Add views in correct order
-                containerView.addSubview(accuracyView)
                 containerView.addSubview(dotView)
                 
-                // Convert to UIImage with CORRECT size
+                // Convert to UIImage
                 let renderer = UIGraphicsImageRenderer(size: CGSize(width: containerSize, height: containerSize))
                 let image = renderer.image { ctx in
                     containerView.layer.render(in: ctx.cgContext)
@@ -405,12 +382,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 
                 userView?.image = image
                 userView?.frame = CGRect(x: 0, y: 0, width: containerSize, height: containerSize)
-                userView?.centerOffset = CGPoint(x: 0, y: 0) // Center perfectly on coordinate
-                
-                // Add subtle pulse animation (delayed to avoid initial lag)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak userView] in
-                    self.addPulseAnimation(to: userView)
-                }
+                userView?.centerOffset = CGPoint(x: 0, y: 0)
             }
             
             return userView
@@ -965,24 +937,5 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 return
             }
         }
-    }
-    
-    /**
-     * Add subtle pulse animation to user location dot for modern, clean look.
-     * Creates a gentle scale animation that makes the accuracy circle breathe.
-     */
-    private func addPulseAnimation(to annotationView: MKAnnotationView?) {
-        guard let view = annotationView else { return }
-        
-        // Very subtle pulse on the accuracy circle (not the dot itself)
-        let pulseAnimation = CABasicAnimation(keyPath: "transform.scale")
-        pulseAnimation.duration = 2.0              // Slow, gentle breathing
-        pulseAnimation.fromValue = 1.0
-        pulseAnimation.toValue = 1.08              // Subtle scale (8% increase)
-        pulseAnimation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        pulseAnimation.autoreverses = true
-        pulseAnimation.repeatCount = .infinity
-        
-        view.layer.add(pulseAnimation, forKey: "pulse")
     }
 }
