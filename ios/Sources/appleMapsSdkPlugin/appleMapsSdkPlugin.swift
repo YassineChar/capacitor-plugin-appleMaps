@@ -338,7 +338,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
      * @return MKAnnotationView configured for the annotation, or nil for user location
      */
     public func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-        // CUSTOM USER LOCATION VIEW - Modern, clean design with NO tap interaction
+        // CUSTOM USER LOCATION VIEW - Modern, clean design with NO tap interaction (improved: circular border + blue glow)
         if annotation is MKUserLocation {
             let identifier = "CustomUserLocationView"
             var userView = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
@@ -347,12 +347,13 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 userView = MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
                 userView?.canShowCallout = false    // NO callout popup
                 userView?.isEnabled = false         // NO tap interaction
-                userView?.zPriority = .min          // CRITICAL: Below whisper markers
+                userView?.zPriority = .min          // Below whisper markers
                 
-                // Clean, simple design - just blue dot with white border
+                // Blue dot with white border + soft glow
                 let dotSize: CGFloat = 16
                 let borderWidth: CGFloat = 2
-                let containerSize = dotSize + (borderWidth * 2) + 6
+                let padding: CGFloat = 3
+                let containerSize = dotSize + (borderWidth * 2) + (padding * 2)
                 
                 let containerView = UIView(frame: CGRect(
                     x: 0, y: 0,
@@ -361,7 +362,13 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 ))
                 containerView.backgroundColor = .clear
                 
-                // Simple blue dot with white border (perfectly centered)
+                // Add soft blue glow under the dot
+                let glowView = UIView(frame: containerView.bounds)
+                glowView.backgroundColor = UIColor(red: 0.0, green: 0.48, blue: 1.0, alpha: 0.25)
+                glowView.layer.cornerRadius = containerSize / 2
+                containerView.addSubview(glowView)
+                
+                // Create main blue dot with white border
                 let dotView = UIView(frame: CGRect(
                     x: (containerSize - dotSize) / 2,
                     y: (containerSize - dotSize) / 2,
@@ -372,17 +379,18 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 dotView.layer.cornerRadius = dotSize / 2
                 dotView.layer.borderWidth = borderWidth
                 dotView.layer.borderColor = UIColor.white.cgColor
-                
                 containerView.addSubview(dotView)
                 
-                // Convert to UIImage
-                let renderer = UIGraphicsImageRenderer(size: CGSize(width: containerSize, height: containerSize))
+                // Convert to UIImage with safe padding
+                let rendererSize = CGSize(width: containerSize + padding * 2, height: containerSize + padding * 2)
+                let renderer = UIGraphicsImageRenderer(size: rendererSize)
                 let image = renderer.image { ctx in
+                    ctx.cgContext.translateBy(x: padding, y: padding)
                     containerView.layer.render(in: ctx.cgContext)
                 }
                 
                 userView?.image = image
-                userView?.frame = CGRect(x: 0, y: 0, width: containerSize, height: containerSize)
+                userView?.frame = CGRect(x: 0, y: 0, width: rendererSize.width, height: rendererSize.height)
                 userView?.centerOffset = CGPoint(x: 0, y: 0)
             }
             
