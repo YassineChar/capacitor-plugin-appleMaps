@@ -28,15 +28,32 @@ class CustomPointAnnotation: MKPointAnnotation {
     var isClickable: Bool = true
 }
 
+/**
+ * Custom cluster annotation for grouping nearby whispers.
+ * Shows first whisper's avatar with "+X more" text below.
+ */
+class WhisperClusterAnnotation: MKPointAnnotation {
+    var whisperAnnotations: [CustomPointAnnotation] = []
+    var mainWhisper: CustomPointAnnotation?
+    var moreText: String = "more" // Translated text from JS
+    
+    var count: Int {
+        return whisperAnnotations.count
+    }
+}
+
 @objc(appleMapsSdkPlugin)
 public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate, MKMapViewDelegate {
     var mapView: MKMapView?
     var locationManager: CLLocationManager?
     var userCircle: MKCircle?
     private var annotations: [String: CustomPointAnnotation] = [:]
+    private var clusterAnnotations: [WhisperClusterAnnotation] = []
     private var mapTopOffset: CGFloat = 0
     private var mapHeightOffset: CGFloat = 0
     private var hapticGenerator: UIImpactFeedbackGenerator?
+    private var moreWhispersTranslation: String = "more" // Translation from JS
+    private var clusteringThreshold: Double = 50 // meters - whispers closer than this are clustered
     
     public let identifier = "appleMapsSdkPlugin"
     public let jsName = "appleMapsSdk"
@@ -237,10 +254,24 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 call.reject("Map is not initialized. Please call initAppleMaps first.")
                 return
             }
-
-            self.mapView?.removeAnnotations(self.mapView?.annotations ?? [])
             
-            // Parse and add annotations from dataPoints array
+            // Get translation for "more" from JS
+            if let moreText = call.getString("moreWhispersTranslation") {
+                self.moreWhispersTranslation = moreText
+            }
+            
+            // Get clustering threshold from JS (optional)
+            if let threshold = call.getDouble("clusteringThreshold") {
+                self.clusteringThreshold = threshold
+            }
+
+            // Remove old annotations (both regular and clusters)
+            self.mapView?.removeAnnotations(self.mapView?.annotations.filter { !($0 is MKUserLocation) } ?? [])
+            self.clusterAnnotations.removeAll()
+            
+            // Parse and create annotations from dataPoints array
+            var whisperAnnotations: [CustomPointAnnotation] = []
+            
             for point in dataPoints {
                 print(point)
                 if let lat = point["latitude"] as? Double,
@@ -285,20 +316,17 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                         annotation.isClickable = isClickable
                     }
                     
-                    // Überprüfe, ob "startDate" und "endDate" vorhanden sind und ob sie sich unterscheiden
+                    // Date range handling
                     if let startDate = point["startDate"] as? String, let endDate = point["endDate"] as? String {
                         if startDate == endDate {
-                            // Wenn beide gleich sind, zeige nur ein Datum
                             annotation.subtitle = "\(startDate):"
                         } else {
-                            // Wenn sie unterschiedlich sind, zeige beide an
                             annotation.subtitle = "\(startDate) - \(endDate):"
                         }
                     }
                     
-                    // Überprüfe, ob "description" einen Wert hat
+                    // Description handling
                     if let descriptionEvent = point["description"] as? String, !descriptionEvent.isEmpty {
-                        // Füge die Beschreibung hinzu, wenn vorhanden
                         if annotation.subtitle != nil {
                             annotation.subtitle? += " \(descriptionEvent)"
                         } else {
@@ -306,10 +334,15 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                         }
                     }
                     
-                    self.mapView?.addAnnotation(annotation)
+                    whisperAnnotations.append(annotation)
                 }
             }
-
+            
+            // CLUSTERING LOGIC: Group nearby whispers
+            let clusteredAnnotations = self.clusterNearbyWhispers(whisperAnnotations)
+            
+            // Add all annotations (both individual and clusters) to map
+            self.mapView?.addAnnotations(clusteredAnnotations)
 
             call.resolve(["status": "success"])
         }
@@ -338,66 +371,119 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
      * @return MKAnnotationView configured for the annotation, or nil for user location
      */
     public func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-        // CUSTOM USER LOCATION VIEW - Modern, clean design with NO tap interaction (improved: circular border + blue glow)
+        // CUSTOM USER LOCATION VIEW - Modern, clean design with NO tap interaction
         if annotation is MKUserLocation {
             let identifier = "CustomUserLocationView"
             var userView = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
-            
+
             if userView == nil {
                 userView = MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
-                userView?.canShowCallout = false    // NO callout popup
-                userView?.isEnabled = false         // NO tap interaction
-                userView?.zPriority = .min          // Below whisper markers
-                
-                // Blue dot with white border + soft glow
+                userView?.canShowCallout = false
+                userView?.isEnabled = false
+                userView?.zPriority = .min
+
+                // ...existing user location rendering code...
                 let dotSize: CGFloat = 16
                 let borderWidth: CGFloat = 2
-                let padding: CGFloat = 3
-                let containerSize = dotSize + (borderWidth * 2) + (padding * 2)
-                
-                let containerView = UIView(frame: CGRect(
-                    x: 0, y: 0,
-                    width: containerSize,
-                    height: containerSize
-                ))
-                containerView.backgroundColor = .clear
-                
-                // Add soft blue glow under the dot
-                let glowView = UIView(frame: containerView.bounds)
-                glowView.backgroundColor = UIColor(red: 0.0, green: 0.48, blue: 1.0, alpha: 0.25)
-                glowView.layer.cornerRadius = containerSize / 2
-                containerView.addSubview(glowView)
-                
-                // Create main blue dot with white border
-                let dotView = UIView(frame: CGRect(
-                    x: (containerSize - dotSize) / 2,
-                    y: (containerSize - dotSize) / 2,
-                    width: dotSize,
-                    height: dotSize
-                ))
-                dotView.backgroundColor = UIColor(red: 0.0, green: 0.48, blue: 1.0, alpha: 1.0)
-                dotView.layer.cornerRadius = dotSize / 2
-                dotView.layer.borderWidth = borderWidth
-                dotView.layer.borderColor = UIColor.white.cgColor
-                containerView.addSubview(dotView)
-                
-                // Convert to UIImage with safe padding
-                let rendererSize = CGSize(width: containerSize + padding * 2, height: containerSize + padding * 2)
-                let renderer = UIGraphicsImageRenderer(size: rendererSize)
+                let glowRadius: CGFloat = 10
+                let totalSize = dotSize + (borderWidth * 2) + (glowRadius * 2)
+
+                let renderer = UIGraphicsImageRenderer(size: CGSize(width: totalSize, height: totalSize))
                 let image = renderer.image { ctx in
-                    ctx.cgContext.translateBy(x: padding, y: padding)
-                    containerView.layer.render(in: ctx.cgContext)
+                    let center = CGPoint(x: totalSize / 2, y: totalSize / 2)
+                    let blueColor = UIColor(red: 0.0, green: 0.48, blue: 1.0, alpha: 1.0)
+                    let whiteColor = UIColor.white
+
+                    let colors = [blueColor.withAlphaComponent(0.25).cgColor, UIColor.clear.cgColor] as CFArray
+                    let colorSpace = CGColorSpaceCreateDeviceRGB()
+                    if let gradient = CGGradient(colorsSpace: colorSpace, colors: colors, locations: [0, 1]) {
+                        ctx.cgContext.drawRadialGradient(
+                            gradient,
+                            startCenter: center,
+                            startRadius: dotSize / 2,
+                            endCenter: center,
+                            endRadius: totalSize / 2,
+                            options: .drawsAfterEndLocation
+                        )
+                    }
+
+                    let dotRect = CGRect(
+                        x: (totalSize - dotSize) / 2,
+                        y: (totalSize - dotSize) / 2,
+                        width: dotSize,
+                        height: dotSize
+                    )
+                    ctx.cgContext.setFillColor(blueColor.cgColor)
+                    ctx.cgContext.fillEllipse(in: dotRect)
+
+                    ctx.cgContext.setStrokeColor(whiteColor.cgColor)
+                    ctx.cgContext.setLineWidth(borderWidth)
+                    ctx.cgContext.strokeEllipse(in: dotRect.insetBy(dx: borderWidth / 2, dy: borderWidth / 2))
                 }
-                
+
                 userView?.image = image
-                userView?.frame = CGRect(x: 0, y: 0, width: rendererSize.width, height: rendererSize.height)
-                userView?.centerOffset = CGPoint(x: 0, y: 0)
+                userView?.frame = CGRect(x: 0, y: 0, width: totalSize, height: totalSize)
+                userView?.centerOffset = .zero
             }
-            
+
             return userView
         }
+        
+        // CLUSTER ANNOTATION - Show main whisper avatar with "+X more" below
+        if let clusterAnnotation = annotation as? WhisperClusterAnnotation {
+            let identifier = "ClusterMarker"
+            var annotationView = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
 
-        // Custom marker handling
+            if annotationView == nil {
+                annotationView = MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
+                annotationView?.canShowCallout = false
+                annotationView?.isEnabled = true
+                annotationView?.zPriority = .max
+            } else {
+                annotationView?.annotation = annotation
+            }
+            
+            guard let mainWhisper = clusterAnnotation.mainWhisper else {
+                return nil
+            }
+            
+            let borderColor = getBorderColorFromExpiry(mainWhisper.expiryColor)
+            let markerSize = mainWhisper.markerSize
+            let avatarBgColor = mainWhisper.avatarColor.flatMap { parseHexColor($0) }
+            
+            // Render cluster image: avatar + "+X more" text below
+            let count = clusterAnnotation.count
+            let moreCount = count - 1
+            let moreText = "+\(moreCount) \(clusterAnnotation.moreText)"
+            
+            annotationView?.image = self.generateClusterMarkerImage(
+                profileImage: nil,
+                initials: mainWhisper.initials,
+                avatarColor: avatarBgColor,
+                borderColor: borderColor,
+                size: markerSize,
+                moreText: moreText
+            )
+            
+            // Load profile image asynchronously
+            if let iconUrl = mainWhisper.iconUrl, !iconUrl.isEmpty {
+                loadImageAsync(from: iconUrl) { [weak annotationView] image in
+                    guard let annotationView = annotationView else { return }
+                    annotationView.image = self.generateClusterMarkerImage(
+                        profileImage: image,
+                        initials: nil,
+                        avatarColor: nil,
+                        borderColor: borderColor,
+                        size: markerSize,
+                        moreText: moreText
+                    )
+                }
+            }
+
+            return annotationView
+        }
+
+        // INDIVIDUAL CUSTOM MARKER
         guard let customAnnotation = annotation as? CustomPointAnnotation else {
             return nil
         }
@@ -407,22 +493,19 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
 
         if annotationView == nil {
             annotationView = MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
-            annotationView?.canShowCallout = false         // no Apple balloon
-            annotationView?.clusteringIdentifier = nil     // disable native clustering
-            annotationView?.displayPriority = .required    // Higher priority than user location
-            annotationView?.isEnabled = true               // Enable tap
-            annotationView?.zPriority = .max               // CRITICAL: Above user location dot
+            annotationView?.canShowCallout = false
+            annotationView?.clusteringIdentifier = nil
+            annotationView?.displayPriority = .required
+            annotationView?.isEnabled = true
+            annotationView?.zPriority = .max
         } else {
             annotationView?.annotation = annotation
         }
 
         let borderColor = getBorderColorFromExpiry(customAnnotation.expiryColor)
         let markerSize = customAnnotation.markerSize
-        
-        // Parse avatarColor from hex string
         let avatarBgColor = customAnnotation.avatarColor.flatMap { parseHexColor($0) }
 
-        // set fallback image (with initials if available)
         annotationView?.image = self.generateCircularMarkerImage(
             profileImage: nil,
             initials: customAnnotation.initials,
@@ -431,7 +514,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             size: markerSize
         )
 
-        // load profile image (asynchronous)
         if let iconUrl = customAnnotation.iconUrl, !iconUrl.isEmpty {
             loadImageAsync(from: iconUrl) { [weak annotationView] image in
                 guard let annotationView = annotationView else { return }
@@ -536,6 +618,118 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             borderColor.setStroke()
             circlePath.lineWidth = 3
             circlePath.stroke()
+        }
+    }
+    
+    /**
+     * Generate cluster marker image with "+X more" text below avatar.
+     * IDENTICAL to MapComponent design: avatar on top, text below.
+     */
+    private func generateClusterMarkerImage(profileImage: UIImage?, initials: String?, avatarColor: UIColor?, borderColor: UIColor, size: CGFloat, moreText: String) -> UIImage {
+        // Calculate total size: avatar + spacing + text height
+        let avatarSize = size
+        let textSpacing: CGFloat = 4
+        let textFont = UIFont.systemFont(ofSize: 14, weight: .bold)
+        let textAttributes: [NSAttributedString.Key: Any] = [
+            .font: textFont,
+            .foregroundColor: UIColor.white
+        ]
+        let textSize = (moreText as NSString).size(withAttributes: textAttributes)
+        let totalHeight = avatarSize + textSpacing + textSize.height + 6  // +6 for text halo
+        let totalWidth = max(avatarSize, textSize.width + 10)
+        
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: totalWidth, height: totalHeight))
+        
+        return renderer.image { context in
+            let ctx = context.cgContext
+            
+            // 1. Draw avatar at top center
+            let avatarX = (totalWidth - avatarSize) / 2
+            let avatarRect = CGRect(x: avatarX, y: 0, width: avatarSize, height: avatarSize)
+            let circlePath = UIBezierPath(ovalIn: avatarRect.insetBy(dx: 3, dy: 3))
+            
+            // Clip to circle
+            circlePath.addClip()
+            
+            if let profileImage = profileImage {
+                profileImage.draw(in: avatarRect.insetBy(dx: 3, dy: 3))
+            } else if let initials = initials, !initials.isEmpty, initials != "?" {
+                let backgroundColor = avatarColor ?? UIColor(red: 0.95, green: 0.32, blue: 0.31, alpha: 1.0)
+                backgroundColor.setFill()
+                circlePath.fill()
+                
+                let fontSize = avatarSize * 0.4
+                let initialsAttributes: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.systemFont(ofSize: fontSize, weight: .semibold),
+                    .foregroundColor: UIColor.white
+                ]
+                
+                let initialsSize = (initials as NSString).size(withAttributes: initialsAttributes)
+                let initialsRect = CGRect(
+                    x: avatarX + (avatarSize - initialsSize.width) / 2,
+                    y: (avatarSize - initialsSize.height) / 2,
+                    width: initialsSize.width,
+                    height: initialsSize.height
+                )
+                
+                (initials as NSString).draw(in: initialsRect, withAttributes: initialsAttributes)
+            } else {
+                let backgroundColor = avatarColor ?? UIColor(red: 0.61, green: 0.64, blue: 0.69, alpha: 1.0)
+                backgroundColor.setFill()
+                circlePath.fill()
+                
+                // Default user icon
+                UIColor.white.setFill()
+                let headRadius = (avatarSize - 6) * 0.15
+                let headCenter = CGPoint(x: avatarX + avatarSize / 2, y: (avatarSize - 6) * 0.35 + 3)
+                let headCircle = UIBezierPath(ovalIn: CGRect(
+                    x: headCenter.x - headRadius,
+                    y: headCenter.y - headRadius,
+                    width: headRadius * 2,
+                    height: headRadius * 2
+                ))
+                headCircle.fill()
+                
+                let bodyRadius = (avatarSize - 6) * 0.25
+                let bodyCenter = CGPoint(x: avatarX + avatarSize / 2, y: (avatarSize - 6) * 0.75 + 3)
+                let bodyCircle = UIBezierPath(ovalIn: CGRect(
+                    x: bodyCenter.x - bodyRadius,
+                    y: bodyCenter.y - bodyRadius,
+                    width: bodyRadius * 2,
+                    height: bodyRadius * 2
+                ))
+                bodyCircle.fill()
+            }
+            
+            // Reset clip for border
+            ctx.resetClip()
+            
+            // Draw border
+            borderColor.setStroke()
+            circlePath.lineWidth = 3
+            circlePath.stroke()
+            
+            // 2. Draw "+X more" text below avatar (IDENTICAL to MapComponent)
+            let textY = avatarSize + textSpacing
+            let textX = (totalWidth - textSize.width) / 2
+            let textRect = CGRect(
+                x: textX,
+                y: textY,
+                width: textSize.width,
+                height: textSize.height
+            )
+            
+            // Text halo (black outline for visibility)
+            let haloAttributes: [NSAttributedString.Key: Any] = [
+                .font: textFont,
+                .foregroundColor: UIColor.black,
+                .strokeColor: UIColor.black,
+                .strokeWidth: -4.0  // Negative = fill + stroke
+            ]
+            (moreText as NSString).draw(in: textRect, withAttributes: haloAttributes)
+            
+            // Text foreground (white)
+            (moreText as NSString).draw(in: textRect, withAttributes: textAttributes)
         }
     }
     
@@ -881,12 +1075,14 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         let hideThreshold: CLLocationDistance = 50
         
         if distance > showThreshold {
-            // User moved away from their location
             notifyListeners("showRecenterButton", data: [:])
         } else if distance < hideThreshold {
-            // User is close to their location
             notifyListeners("hideRecenterButton", data: [:])
         }
+        
+        // Re-cluster whispers when zoom changes significantly
+        // This ensures clusters update based on current zoom level
+        self.reclusterWhispers()
     }
     
     /**
@@ -909,26 +1105,65 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         self.hapticGenerator?.impactOccurred()
         self.hapticGenerator?.prepare()
         
-        // Find tapped annotation (fast CGRect hit test)
+        // Check for cluster tap first (higher priority)
+        for annotation in mapView.annotations {
+            guard let clusterAnnotation = annotation as? WhisperClusterAnnotation else { continue }
+            guard let annotationView = mapView.view(for: annotation) else { continue }
+            
+            let annotationPoint = mapView.convert(annotation.coordinate, toPointTo: mapView)
+            
+            // Get image size (avatar + text)
+            let imageSize = annotationView.image?.size ?? CGSize(width: 60, height: 80)
+            let expandedHitSize = imageSize.width * 1.5
+            let hitRect = CGRect(
+                x: annotationPoint.x - expandedHitSize / 2,
+                y: annotationPoint.y - imageSize.height / 2,
+                width: expandedHitSize,
+                height: imageSize.height
+            )
+            
+            if hitRect.contains(touchPoint) {
+                // CLUSTER TAP: Zoom in to separate whispers (IDENTICAL to MapComponent)
+                print("⚡ [MapKit] Cluster tapped, zooming in to separate whispers")
+                
+                // Calculate zoom level to separate whispers
+                let currentSpan = mapView.region.span.latitudeDelta
+                let targetSpan = currentSpan / 3  // Zoom in 3x
+                
+                let region = MKCoordinateRegion(
+                    center: clusterAnnotation.coordinate,
+                    span: MKCoordinateSpan(latitudeDelta: targetSpan, longitudeDelta: targetSpan)
+                )
+                
+                // Smooth zoom animation
+                mapView.setRegion(region, animated: true)
+                
+                // After zoom, re-cluster whispers
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    self.reclusterWhispers()
+                }
+                
+                return
+            }
+        }
+        
+        // Find tapped individual whisper (fast CGRect hit test)
         for annotation in mapView.annotations {
             guard let customAnnotation = annotation as? CustomPointAnnotation else { continue }
             guard let annotationView = mapView.view(for: annotation) else { continue }
             
-            // Convert annotation coordinate to screen point
             let annotationPoint = mapView.convert(annotation.coordinate, toPointTo: mapView)
             
-            // Expand hit area by 50% for easier tapping
             let markerSize = customAnnotation.markerSize
             let expandedHitSize = markerSize * 1.5
             let hitRect = CGRect(
                 x: annotationPoint.x - expandedHitSize / 2,
-                y: annotationPoint.y - expandedHitSize / 2,  // CENTERED vertically
+                y: annotationPoint.y - expandedHitSize / 2,
                 width: expandedHitSize,
                 height: expandedHitSize
             )
             
             if hitRect.contains(touchPoint) {
-                // INSTANT notification 
                 var tapData: [String: Any] = [
                     "latitude": customAnnotation.coordinate.latitude,
                     "longitude": customAnnotation.coordinate.longitude,
@@ -940,11 +1175,125 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                     tapData["whisperId"] = whisperId
                 }
                 
-                print("⚡ [MapKit] INSTANT tap: \(customAnnotation.whisperId ?? "none") (bypassed didSelect)")
+                print("⚡ [MapKit] INSTANT tap: \(customAnnotation.whisperId ?? "none")")
                 notifyListeners("onMarkerTap", data: tapData)
                 
                 return
             }
         }
+    }
+    
+    /**
+     * Re-cluster whispers after zoom change.
+     * Called after zoom animation completes.
+     */
+    private func reclusterWhispers() {
+        guard let mapView = self.mapView else { return }
+        
+        // Collect all individual whispers (extract from clusters + individual annotations)
+        var allWhispers: [CustomPointAnnotation] = []
+        
+        for annotation in mapView.annotations {
+            if let cluster = annotation as? WhisperClusterAnnotation {
+                allWhispers.append(contentsOf: cluster.whisperAnnotations)
+            } else if let whisper = annotation as? CustomPointAnnotation {
+                allWhispers.append(whisper)
+            }
+        }
+        
+        // Remove old annotations
+        mapView.removeAnnotations(mapView.annotations.filter { !($0 is MKUserLocation) })
+        
+        // Re-cluster with current zoom level
+        let clustered = self.clusterNearbyWhispers(allWhispers)
+        mapView.addAnnotations(clustered)
+        
+        print("🔄 [MapKit] Re-clustered: \(allWhispers.count) whispers -> \(clustered.count) markers")
+    }
+    
+    /**
+     * Cluster nearby whispers based on geographic proximity.
+     * IDENTICAL LOGIC to MapComponent: whispers within clusteringThreshold meters are grouped.
+     * 
+     * Returns array of MKAnnotation (mix of individual CustomPointAnnotation and WhisperClusterAnnotation).
+     */
+    private func clusterNearbyWhispers(_ annotations: [CustomPointAnnotation]) -> [MKAnnotation] {
+        guard let mapView = self.mapView else { return annotations }
+        
+        var result: [MKAnnotation] = []
+        var processed: Set<String> = []
+        
+        // Get current map zoom level (approximate - based on visible region span)
+        let zoomLevel = self.getApproximateZoomLevel()
+        
+        // Disable clustering at high zoom levels (> 16 = very close)
+        if zoomLevel > 16 {
+            return annotations
+        }
+        
+        for annotation in annotations {
+            guard let whisperId = annotation.whisperId else {
+                result.append(annotation)
+                continue
+            }
+            
+            if processed.contains(whisperId) {
+                continue
+            }
+            
+            // Find all nearby whispers within threshold
+            let nearby = annotations.filter { otherAnnotation in
+                guard let otherWhisperId = otherAnnotation.whisperId,
+                      !processed.contains(otherWhisperId) else {
+                    return false
+                }
+                
+                let location1 = CLLocation(latitude: annotation.coordinate.latitude, longitude: annotation.coordinate.longitude)
+                let location2 = CLLocation(latitude: otherAnnotation.coordinate.latitude, longitude: otherAnnotation.coordinate.longitude)
+                let distance = location1.distance(from: location2)
+                
+                return distance <= self.clusteringThreshold
+            }
+            
+            if nearby.count > 1 {
+                // Create cluster
+                let cluster = WhisperClusterAnnotation()
+                cluster.whisperAnnotations = nearby
+                cluster.mainWhisper = nearby.first
+                cluster.coordinate = nearby.first!.coordinate
+                cluster.title = nearby.first!.title
+                cluster.moreText = self.moreWhispersTranslation
+                
+                result.append(cluster)
+                
+                // Mark all as processed
+                for whisper in nearby {
+                    if let id = whisper.whisperId {
+                        processed.insert(id)
+                    }
+                }
+            } else {
+                // Individual whisper
+                result.append(annotation)
+                processed.insert(whisperId)
+            }
+        }
+        
+        return result
+    }
+    
+    /**
+     * Get approximate zoom level from current map region.
+     * Web zoom 14 ≈ 0.05 degrees span.
+     */
+    private func getApproximateZoomLevel() -> Double {
+        guard let mapView = self.mapView else { return 14.0 }
+        
+        let span = mapView.region.span.latitudeDelta
+        let baseSpan = 0.05
+        let zoomFactor = span / baseSpan
+        let zoom = 14.0 - log2(zoomFactor)
+        
+        return zoom
     }
 }
