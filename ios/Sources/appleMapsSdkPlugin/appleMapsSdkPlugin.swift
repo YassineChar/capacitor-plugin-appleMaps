@@ -52,8 +52,9 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
     private var mapTopOffset: CGFloat = 0
     private var mapHeightOffset: CGFloat = 0
     private var hapticGenerator: UIImpactFeedbackGenerator?
-    private var moreWhispersTranslation: String = "more" // Translation from JS
-    private var clusteringThreshold: Double = 50 // meters - whispers closer than this are clustered
+    private var moreWhispersTranslation: String = "more"
+    private var clusteringThreshold: Double = 50
+    private var lastClusteredZoomLevel: Double = 0 // Track zoom level of last clustering
     
     public let identifier = "appleMapsSdkPlugin"
     public let jsName = "appleMapsSdk"
@@ -1059,8 +1060,9 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
      * Shows/hides recenter button based on distance from user location.
      * If map center is more than 100m from user location, show button.
      * 
-     * NO MORE AUTO RE-CLUSTERING: User-triggered zoom doesn't re-cluster (performance killer).
-     * Only re-cluster when NEW whispers are added via setValuesAppleMaps.
+     * RE-CLUSTER ON ZOOM CHANGE: When zoom changes significantly (±1 level),
+     * re-cluster with new dynamic threshold. Prevents performance issues by only
+     * reclustering on meaningful zoom changes.
      */
     public func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
         guard let userLocation = mapView.userLocation.location else { return }
@@ -1083,8 +1085,15 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             notifyListeners("hideRecenterButton", data: [:])
         }
         
-        // REMOVED: Auto re-clustering on zoom (performance killer)
-        // Clustering happens ONLY when setValuesAppleMaps is called with new data
+        // RE-CLUSTER on significant zoom change (±1 level = threshold changes)
+        let currentZoom = self.getApproximateZoomLevel()
+        let zoomDelta = abs(currentZoom - self.lastClusteredZoomLevel)
+        
+        // Only re-cluster if zoom changed by at least 1 level (threshold tier changes)
+        if zoomDelta >= 1.0 && self.lastClusteredZoomLevel > 0 {
+            print("🔄 [MapKit] Zoom changed significantly (\(String(format: "%.2f", self.lastClusteredZoomLevel)) → \(String(format: "%.2f", currentZoom))), re-clustering...")
+            self.reclusterWhispers()
+        }
     }
     
     /**
@@ -1125,22 +1134,46 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             )
             
             if hitRect.contains(touchPoint) {
-                // CLUSTER TAP: Zoom in to separate whispers (IDENTICAL to MapComponent)
-                print("⚡ [MapKit] Cluster tapped, zooming in to separate whispers")
+                // CLUSTER TAP: Calculate intelligent zoom to separate ALL whispers
+                print("⚡ [MapKit] Cluster tapped with \(clusterAnnotation.count) whispers, calculating zoom...")
                 
-                // Calculate zoom level to separate whispers
-                let currentSpan = mapView.region.span.latitudeDelta
-                let targetSpan = currentSpan / 3  // Zoom in 3x
+                // Find max distance between any 2 whispers in cluster (bounding box)
+                var maxDistance: CLLocationDistance = 0
+                let whispers = clusterAnnotation.whisperAnnotations
+                
+                for i in 0..<whispers.count {
+                    for j in (i+1)..<whispers.count {
+                        let loc1 = CLLocation(latitude: whispers[i].coordinate.latitude, longitude: whispers[i].coordinate.longitude)
+                        let loc2 = CLLocation(latitude: whispers[j].coordinate.latitude, longitude: whispers[j].coordinate.longitude)
+                        let distance = loc1.distance(from: loc2)
+                        maxDistance = max(maxDistance, distance)
+                    }
+                }
+                
+                print("⚡ [MapKit] Max distance between whispers: \(maxDistance)m")
+                
+                // Calculate target span to show all whispers + 50% margin
+                // 1 degree latitude ≈ 111,000 meters
+                // Add 50% margin so whispers are comfortably separated
+                let marginMultiplier = 1.5
+                let targetSpanMeters = maxDistance * marginMultiplier
+                let targetSpan = (targetSpanMeters / 111000.0) * 1.2 // Extra 20% padding for UI
+                
+                // Ensure minimum zoom (don't zoom in too much if whispers are very close)
+                let minSpan = 0.001 // ~110m view (building level)
+                let finalSpan = max(minSpan, targetSpan)
+                
+                print("⚡ [MapKit] Target span: \(String(format: "%.6f", finalSpan))° (~\(Int(finalSpan * 111000))m view)")
                 
                 let region = MKCoordinateRegion(
                     center: clusterAnnotation.coordinate,
-                    span: MKCoordinateSpan(latitudeDelta: targetSpan, longitudeDelta: targetSpan)
+                    span: MKCoordinateSpan(latitudeDelta: finalSpan, longitudeDelta: finalSpan)
                 )
                 
                 // Smooth zoom animation
                 mapView.setRegion(region, animated: true)
                 
-                // After zoom, re-cluster whispers
+                // After zoom, re-cluster whispers (will separate due to higher zoom)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                     self.reclusterWhispers()
                 }
@@ -1233,10 +1266,26 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         // Get current map zoom level (approximate - based on visible region span)
         let zoomLevel = self.getApproximateZoomLevel()
         
-        print("🔍 [Clustering] Starting with \(annotations.count) whispers, zoom level: \(String(format: "%.2f", zoomLevel)), threshold: \(self.clusteringThreshold)m")
+        // DYNAMIC CLUSTERING THRESHOLD based on zoom (like Google Maps)
+        // Zoom 10-12 (city view) = 500m threshold
+        // Zoom 13-14 (district view) = 200m threshold
+        // Zoom 15-16 (street view) = 100m threshold
+        // Zoom 17+ (building view) = 50m threshold (original)
+        let dynamicThreshold: Double
+        if zoomLevel < 13 {
+            dynamicThreshold = 500  // Very zoomed out - large threshold
+        } else if zoomLevel < 15 {
+            dynamicThreshold = 200  // Medium zoom - medium threshold
+        } else if zoomLevel < 17 {
+            dynamicThreshold = 100  // Close zoom - small threshold
+        } else {
+            dynamicThreshold = 50   // Very close zoom - original threshold
+        }
         
-        // Disable clustering at high zoom levels (> 16 = very close)
-        if zoomLevel > 16 {
+        print("🔍 [Clustering] Starting with \(annotations.count) whispers, zoom: \(String(format: "%.2f", zoomLevel)), threshold: \(dynamicThreshold)m (base: \(self.clusteringThreshold)m)")
+        
+        // Disable clustering at VERY high zoom levels (> 18 = single building)
+        if zoomLevel > 18 {
             print("🔍 [Clustering] Zoom too high (\(String(format: "%.2f", zoomLevel))), clustering disabled")
             return annotations
         }
@@ -1262,7 +1311,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 let location2 = CLLocation(latitude: otherAnnotation.coordinate.latitude, longitude: otherAnnotation.coordinate.longitude)
                 let distance = location1.distance(from: location2)
                 
-                return distance <= self.clusteringThreshold
+                return distance <= dynamicThreshold
             }
             
             print("🔍 [Clustering] Whisper \(whisperId) has \(nearby.count) nearby (including self)")
@@ -1301,6 +1350,9 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         }
         
         print("🔍 [Clustering] Result: \(result.count) markers (\(result.filter { $0 is WhisperClusterAnnotation }.count) clusters, \(result.filter { $0 is CustomPointAnnotation }.count) individual)")
+        
+        // Save current zoom level for next comparison
+        self.lastClusteredZoomLevel = zoomLevel
         
         return result
     }
