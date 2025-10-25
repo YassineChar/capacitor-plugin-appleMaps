@@ -1058,6 +1058,9 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
      *
      * Shows/hides recenter button based on distance from user location.
      * If map center is more than 100m from user location, show button.
+     * 
+     * NO MORE AUTO RE-CLUSTERING: User-triggered zoom doesn't re-cluster (performance killer).
+     * Only re-cluster when NEW whispers are added via setValuesAppleMaps.
      */
     public func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
         guard let userLocation = mapView.userLocation.location else { return }
@@ -1080,9 +1083,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             notifyListeners("hideRecenterButton", data: [:])
         }
         
-        // Re-cluster whispers when zoom changes significantly
-        // This ensures clusters update based on current zoom level
-        self.reclusterWhispers()
+        // REMOVED: Auto re-clustering on zoom (performance killer)
+        // Clustering happens ONLY when setValuesAppleMaps is called with new data
     }
     
     /**
@@ -1215,6 +1217,11 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
      * Cluster nearby whispers based on geographic proximity.
      * IDENTICAL LOGIC to MapComponent: whispers within clusteringThreshold meters are grouped.
      * 
+     * CRITICAL FIXES:
+     * - Only create cluster if count >= 2 (avoid "+1 more" bug)
+     * - Prioritize whisper with profile photo as main whisper
+     * - Use stable coordinate (centroid of all whispers, not just first)
+     * 
      * Returns array of MKAnnotation (mix of individual CustomPointAnnotation and WhisperClusterAnnotation).
      */
     private func clusterNearbyWhispers(_ annotations: [CustomPointAnnotation]) -> [MKAnnotation] {
@@ -1255,13 +1262,20 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 return distance <= self.clusteringThreshold
             }
             
-            if nearby.count > 1 {
-                // Create cluster
+            // CRITICAL: Only cluster if 2+ whispers (avoid "+1 more" bug)
+            if nearby.count >= 2 {
+                // PRIORITIZE: Whisper with profile photo as main whisper
+                let mainWhisper = nearby.first { $0.iconUrl != nil && !$0.iconUrl!.isEmpty } ?? nearby.first!
+                
+                // Calculate centroid for stable cluster position
+                let avgLat = nearby.map { $0.coordinate.latitude }.reduce(0, +) / Double(nearby.count)
+                let avgLon = nearby.map { $0.coordinate.longitude }.reduce(0, +) / Double(nearby.count)
+                
                 let cluster = WhisperClusterAnnotation()
                 cluster.whisperAnnotations = nearby
-                cluster.mainWhisper = nearby.first
-                cluster.coordinate = nearby.first!.coordinate
-                cluster.title = nearby.first!.title
+                cluster.mainWhisper = mainWhisper
+                cluster.coordinate = CLLocationCoordinate2D(latitude: avgLat, longitude: avgLon)
+                cluster.title = mainWhisper.title
                 cluster.moreText = self.moreWhispersTranslation
                 
                 result.append(cluster)
@@ -1273,7 +1287,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                     }
                 }
             } else {
-                // Individual whisper
+                // Individual whisper (solo or not clustered)
                 result.append(annotation)
                 processed.insert(whisperId)
             }
