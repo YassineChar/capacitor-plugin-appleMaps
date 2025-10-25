@@ -1233,8 +1233,11 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         // Get current map zoom level (approximate - based on visible region span)
         let zoomLevel = self.getApproximateZoomLevel()
         
+        print("🔍 [Clustering] Starting with \(annotations.count) whispers, zoom level: \(String(format: "%.2f", zoomLevel)), threshold: \(self.clusteringThreshold)m")
+        
         // Disable clustering at high zoom levels (> 16 = very close)
         if zoomLevel > 16 {
+            print("🔍 [Clustering] Zoom too high (\(String(format: "%.2f", zoomLevel))), clustering disabled")
             return annotations
         }
         
@@ -1262,8 +1265,11 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 return distance <= self.clusteringThreshold
             }
             
+            print("🔍 [Clustering] Whisper \(whisperId) has \(nearby.count) nearby (including self)")
+            
             // CRITICAL: Only cluster if 2+ whispers (avoid "+1 more" bug)
             if nearby.count >= 2 {
+                print("✅ [Clustering] Creating cluster with \(nearby.count) whispers → +\(nearby.count - 1) more")
                 // PRIORITIZE: Whisper with profile photo as main whisper
                 let mainWhisper = nearby.first { $0.iconUrl != nil && !$0.iconUrl!.isEmpty } ?? nearby.first!
                 
@@ -1288,10 +1294,13 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 }
             } else {
                 // Individual whisper (solo or not clustered)
+                print("❌ [Clustering] Whisper \(whisperId) stays individual (nearby.count = \(nearby.count))")
                 result.append(annotation)
                 processed.insert(whisperId)
             }
         }
+        
+        print("🔍 [Clustering] Result: \(result.count) markers (\(result.filter { $0 is WhisperClusterAnnotation }.count) clusters, \(result.filter { $0 is CustomPointAnnotation }.count) individual)")
         
         return result
     }
