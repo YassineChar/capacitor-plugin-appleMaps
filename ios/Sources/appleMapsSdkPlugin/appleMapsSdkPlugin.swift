@@ -274,7 +274,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             var whisperAnnotations: [CustomPointAnnotation] = []
             
             for point in dataPoints {
-                print(point)
                 if let lat = point["latitude"] as? Double,
                    let lon = point["longitude"] as? Double,
                    let label = point["label"] as? String {
@@ -957,17 +956,14 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             
             // Remove existing circle if present
             if let existingCircle = self.userCircle {
-                print("🔵 [MapKit] Removing existing circle")
                 mapView.removeOverlay(existingCircle)
             }
             
             let center = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
             let circle = MKCircle(center: center, radius: radius)
             
-            print("🔵 [MapKit] Adding circle at: \(latitude), \(longitude) with radius: \(radius)m")
             self.userCircle = circle
             mapView.addOverlay(circle)
-            print("✅ [MapKit] Circle overlay added to map")
             
             call.resolve(["status": "success", "circleId": "user-circle"])
         }
@@ -1024,7 +1020,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         // INSTANT deselect - prevent MapKit's selection animation
         view.isSelected = false
         
-        print("⚠️ [MapKit] didSelect fired (should be handled by handleMapTap first)")
     }
     
     /**
@@ -1043,12 +1038,10 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
      */
     public func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
         if let circle = overlay as? MKCircle {
-            print("🔵 [MapKit] Rendering circle overlay - radius: \(circle.radius)m")
             let renderer = MKCircleRenderer(circle: circle)
             renderer.strokeColor = UIColor(red: 0, green: 229/255, blue: 255/255, alpha: 1.0)
             renderer.fillColor = UIColor(red: 0, green: 229/255, blue: 255/255, alpha: 0.3)
             renderer.lineWidth = 2
-            print("✅ [MapKit] Circle renderer created with stroke color and fill")
             return renderer
         }
         return MKOverlayRenderer(overlay: overlay)
@@ -1091,7 +1084,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         
         // Only re-cluster if zoom changed by at least 1 level (threshold tier changes)
         if zoomDelta >= 1.0 && self.lastClusteredZoomLevel > 0 {
-            print("🔄 [MapKit] Zoom changed significantly (\(String(format: "%.2f", self.lastClusteredZoomLevel)) → \(String(format: "%.2f", currentZoom))), re-clustering...")
             self.reclusterWhispers()
         }
     }
@@ -1135,7 +1127,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             
             if hitRect.contains(touchPoint) {
                 // CLUSTER TAP: Calculate intelligent zoom to separate ALL whispers
-                print("⚡ [MapKit] Cluster tapped with \(clusterAnnotation.count) whispers, calculating zoom...")
                 
                 // Find max distance between any 2 whispers in cluster (bounding box)
                 var maxDistance: CLLocationDistance = 0
@@ -1150,7 +1141,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                     }
                 }
                 
-                print("⚡ [MapKit] Max distance between whispers: \(maxDistance)m")
                 
                 // Calculate target span to show all whispers + 50% margin
                 // 1 degree latitude ≈ 111,000 meters
@@ -1163,7 +1153,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 let minSpan = 0.001 // ~110m view (building level)
                 let finalSpan = max(minSpan, targetSpan)
                 
-                print("⚡ [MapKit] Target span: \(String(format: "%.6f", finalSpan))° (~\(Int(finalSpan * 111000))m view)")
                 
                 let region = MKCoordinateRegion(
                     center: clusterAnnotation.coordinate,
@@ -1210,7 +1199,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                     tapData["whisperId"] = whisperId
                 }
                 
-                print("⚡ [MapKit] INSTANT tap: \(customAnnotation.whisperId ?? "none")")
                 notifyListeners("onMarkerTap", data: tapData)
                 
                 return
@@ -1243,7 +1231,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         let clustered = self.clusterNearbyWhispers(allWhispers)
         mapView.addAnnotations(clustered)
         
-        print("🔄 [MapKit] Re-clustered: \(allWhispers.count) whispers -> \(clustered.count) markers")
     }
     
     /**
@@ -1282,11 +1269,9 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             dynamicThreshold = 50   // Very close zoom - original threshold
         }
         
-        print("🔍 [Clustering] Starting with \(annotations.count) whispers, zoom: \(String(format: "%.2f", zoomLevel)), threshold: \(dynamicThreshold)m (base: \(self.clusteringThreshold)m)")
         
         // Disable clustering at VERY high zoom levels (> 18 = single building)
         if zoomLevel > 18 {
-            print("🔍 [Clustering] Zoom too high (\(String(format: "%.2f", zoomLevel))), clustering disabled")
             return annotations
         }
         
@@ -1314,11 +1299,9 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 return distance <= dynamicThreshold
             }
             
-            print("🔍 [Clustering] Whisper \(whisperId) has \(nearby.count) nearby (including self)")
             
             // CRITICAL: Only cluster if 2+ whispers (avoid "+1 more" bug)
             if nearby.count >= 2 {
-                print("✅ [Clustering] Creating cluster with \(nearby.count) whispers → +\(nearby.count - 1) more")
                 // PRIORITIZE: Whisper with profile photo as main whisper
                 let mainWhisper = nearby.first { $0.iconUrl != nil && !$0.iconUrl!.isEmpty } ?? nearby.first!
                 
@@ -1343,13 +1326,11 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 }
             } else {
                 // Individual whisper (solo or not clustered)
-                print("❌ [Clustering] Whisper \(whisperId) stays individual (nearby.count = \(nearby.count))")
                 result.append(annotation)
                 processed.insert(whisperId)
             }
         }
         
-        print("🔍 [Clustering] Result: \(result.count) markers (\(result.filter { $0 is WhisperClusterAnnotation }.count) clusters, \(result.filter { $0 is CustomPointAnnotation }.count) individual)")
         
         // Save current zoom level for next comparison
         self.lastClusteredZoomLevel = zoomLevel
