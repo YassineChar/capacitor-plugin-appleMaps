@@ -998,8 +998,32 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 return
             }
             
-            mapView.removeAnnotations(mapView.annotations.filter { !($0 is MKUserLocation) })
+            print("🗑️ [Swift clearMarkers] Starting - current annotations count:", mapView.annotations.count)
+            print("🗑️ [Swift clearMarkers] Internal annotations array count:", self.annotations.count)
+            
+            // Remove ALL annotations (except user location)
+            let annotationsToRemove = mapView.annotations.filter { !($0 is MKUserLocation) }
+            print("🗑️ [Swift clearMarkers] Removing", annotationsToRemove.count, "annotations from map")
+            mapView.removeAnnotations(annotationsToRemove)
+
+            // Clear internal tracking array
             self.annotations.removeAll()
+            
+            // Force MapKit to invalidate ALL reusable annotation views
+            // This clears the internal cache that might be causing clustering issues
+            print("🧹 [Swift clearMarkers] Forcing complete map region update to invalidate view cache...")
+            let currentRegion = mapView.region
+            let tempRegion = MKCoordinateRegion(
+                center: currentRegion.center,
+                span: MKCoordinateSpan(
+                    latitudeDelta: currentRegion.span.latitudeDelta * 1.0001,
+                    longitudeDelta: currentRegion.span.longitudeDelta * 1.0001
+                )
+            )
+            mapView.setRegion(tempRegion, animated: false)
+            mapView.setRegion(currentRegion, animated: false)
+            
+            print("✅ [Swift clearMarkers] Completed - remaining annotations:", mapView.annotations.count)
             
             call.resolve(["status": "success"])
         }
@@ -1141,6 +1165,34 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                     }
                 }
                 
+                // If whispers have identical/very close coordinates (< 5m apart),
+                // artificially spread them in a circle so they become visible individually
+                let threshold: CLLocationDistance = 5.0
+                if maxDistance < threshold && whispers.count > 1 {
+                    print("🎯 [Cluster Tap] Whispers too close (\(maxDistance)m), applying circular offset")
+                    
+                    // Spread whispers in circle pattern (radius = 15m per whisper count)
+                    let spreadRadius = 15.0 * Double(whispers.count)  // Scales with count
+                    let angleStep = 2.0 * .pi / Double(whispers.count)
+                    let centerCoord = clusterAnnotation.coordinate
+                    
+                    for (index, whisper) in whispers.enumerated() {
+                        let angle = Double(index) * angleStep
+                        
+                        // Convert meters to degrees (approximately)
+                        // 1 degree latitude ≈ 111,000 meters
+                        let deltaLat = (spreadRadius * sin(angle)) / 111000.0
+                        let deltaLon = (spreadRadius * cos(angle)) / (111000.0 * cos(centerCoord.latitude * .pi / 180.0))
+                        
+                        whisper.coordinate = CLLocationCoordinate2D(
+                            latitude: centerCoord.latitude + deltaLat,
+                            longitude: centerCoord.longitude + deltaLon
+                        )
+                    }
+                    
+                    // Recalculate maxDistance after spread
+                    maxDistance = spreadRadius * 2.0
+                }
                 
                 // Calculate target span to show all whispers + 50% margin
                 // 1 degree latitude ≈ 111,000 meters
@@ -1162,7 +1214,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 // Smooth zoom animation
                 mapView.setRegion(region, animated: true)
                 
-                // After zoom, re-cluster whispers (will separate due to higher zoom)
+                // After zoom, re-cluster whispers (will separate due to higher zoom + offset)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                     self.reclusterWhispers()
                 }
