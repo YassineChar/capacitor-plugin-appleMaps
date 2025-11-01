@@ -26,6 +26,7 @@ class CustomPointAnnotation: MKPointAnnotation {
     var markerSize: CGFloat = 60
     var whisperId: String?
     var isClickable: Bool = true
+    var originalCoordinate: CLLocationCoordinate2D?
 }
 
 /**
@@ -280,6 +281,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                     
                     let annotation = CustomPointAnnotation()
                     annotation.coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
+                    annotation.originalCoordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
                     annotation.title = label
                     
                     // Support custom icon URL for marker personalization
@@ -1000,14 +1002,26 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             
             print("🗑️ [Swift clearMarkers] Starting - current annotations count:", mapView.annotations.count)
             print("🗑️ [Swift clearMarkers] Internal annotations array count:", self.annotations.count)
+            print("🗑️ [Swift clearMarkers] Internal cluster array count:", self.clusterAnnotations.count)
             
-            // Remove ALL annotations (except user location)
-            let annotationsToRemove = mapView.annotations.filter { !($0 is MKUserLocation) }
-            print("🗑️ [Swift clearMarkers] Removing", annotationsToRemove.count, "annotations from map")
-            mapView.removeAnnotations(annotationsToRemove)
+            // CRITICAL: Remove ALL CustomPointAnnotation and WhisperClusterAnnotation
+            // Do NOT rely on filter - EXPLICITLY remove our custom types
+            let customAnnotations = mapView.annotations.filter { $0 is CustomPointAnnotation }
+            let clusterAnnotations = mapView.annotations.filter { $0 is WhisperClusterAnnotation }
+            let allWhisperAnnotations = customAnnotations + clusterAnnotations
+            
+            print("🗑️ [Swift clearMarkers] Custom annotations:", customAnnotations.count)
+            print("🗑️ [Swift clearMarkers] Cluster annotations:", clusterAnnotations.count)
+            print("🗑️ [Swift clearMarkers] Total to remove:", allWhisperAnnotations.count)
+            
+            // Remove in one batch
+            if !allWhisperAnnotations.isEmpty {
+                mapView.removeAnnotations(allWhisperAnnotations)
+            }
 
-            // Clear internal tracking array
+            // Clear internal tracking arrays
             self.annotations.removeAll()
+            self.clusterAnnotations.removeAll()
             
             // Force MapKit to invalidate ALL reusable annotation views
             // This clears the internal cache that might be causing clustering issues
@@ -1023,7 +1037,16 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             mapView.setRegion(tempRegion, animated: false)
             mapView.setRegion(currentRegion, animated: false)
             
-            print("✅ [Swift clearMarkers] Completed - remaining annotations:", mapView.annotations.count)
+            // Final verification
+            let remainingAnnotations = mapView.annotations.filter { !($0 is MKUserLocation) }
+            print("✅ [Swift clearMarkers] Completed - total remaining:", mapView.annotations.count, "whisper remaining:", remainingAnnotations.count)
+            
+            if remainingAnnotations.count > 0 {
+                print("🚨 [Swift clearMarkers] ERROR - Still have whisper annotations after clear!")
+                for ann in remainingAnnotations {
+                    print("   - Remaining annotation type:", type(of: ann))
+                }
+            }
             
             call.resolve(["status": "success"])
         }
