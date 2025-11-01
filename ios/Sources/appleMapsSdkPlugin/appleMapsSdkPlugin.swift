@@ -271,6 +271,9 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             self.mapView?.removeAnnotations(self.mapView?.annotations.filter { !($0 is MKUserLocation) } ?? [])
             self.clusterAnnotations.removeAll()
             
+            // Track whisper IDs to prevent duplicates
+            var existingWhisperIds = Set<String>()
+            
             // Parse and create annotations from dataPoints array
             var whisperAnnotations: [CustomPointAnnotation] = []
             
@@ -278,6 +281,19 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 if let lat = point["latitude"] as? Double,
                    let lon = point["longitude"] as? Double,
                    let label = point["label"] as? String {
+                    
+                    // Deduplicate by whisper ID
+                    var whisperId: String? = nil
+                    if let id = point["whisperId"] as? String {
+                        whisperId = id
+                        
+                        // Skip if we've already added this whisper
+                        if existingWhisperIds.contains(id) {
+                            print("🚫 [Swift setValuesAppleMaps] SKIPPING DUPLICATE whisper ID:", id)
+                            continue
+                        }
+                        existingWhisperIds.insert(id)
+                    }
                     
                     let annotation = CustomPointAnnotation()
                     annotation.coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
@@ -310,8 +326,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                     }
                     
                     // Support unique whisper ID for navigation on tap 
-                    if let whisperId = point["whisperId"] as? String {
-                        annotation.whisperId = whisperId
+                    if let id = whisperId {
+                        annotation.whisperId = id
                     }
                     // Support isClickable flag for markers that should not trigger interactions
                     if let isClickable = point["isClickable"] as? Bool {
@@ -339,6 +355,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                     whisperAnnotations.append(annotation)
                 }
             }
+            
+            print("✅ [Swift setValuesAppleMaps] Processed dataPoints:", dataPoints.count, "-> unique whispers:", whisperAnnotations.count, "(duplicates filtered:", dataPoints.count - whisperAnnotations.count, ")")
             
             // CLUSTERING LOGIC: Group nearby whispers
             let clusteredAnnotations = self.clusterNearbyWhispers(whisperAnnotations)
