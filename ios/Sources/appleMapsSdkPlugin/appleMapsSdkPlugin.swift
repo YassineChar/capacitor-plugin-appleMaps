@@ -1017,21 +1017,12 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 call.reject("Map is not initialized")
                 return
             }
-            
-            print("🗑️ [Swift clearMarkers] Starting - current annotations count:", mapView.annotations.count)
-            print("🗑️ [Swift clearMarkers] Internal annotations array count:", self.annotations.count)
-            print("🗑️ [Swift clearMarkers] Internal cluster array count:", self.clusterAnnotations.count)
-            
-            // CRITICAL: Remove ALL CustomPointAnnotation and WhisperClusterAnnotation
+
+            // Remove ALL CustomPointAnnotation and WhisperClusterAnnotation
             // Do NOT rely on filter - EXPLICITLY remove our custom types
             let customAnnotations = mapView.annotations.filter { $0 is CustomPointAnnotation }
             let clusterAnnotations = mapView.annotations.filter { $0 is WhisperClusterAnnotation }
             let allWhisperAnnotations = customAnnotations + clusterAnnotations
-            
-            print("🗑️ [Swift clearMarkers] Custom annotations:", customAnnotations.count)
-            print("🗑️ [Swift clearMarkers] Cluster annotations:", clusterAnnotations.count)
-            print("🗑️ [Swift clearMarkers] Total to remove:", allWhisperAnnotations.count)
-            
             // Remove in one batch
             if !allWhisperAnnotations.isEmpty {
                 mapView.removeAnnotations(allWhisperAnnotations)
@@ -1208,14 +1199,19 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 
                 // If whispers have identical/very close coordinates (< 5m apart),
                 // artificially spread them in a circle so they become visible individually
+                // MINIMAL SPREAD: Only 3-5m to keep whispers close to real location
                 let threshold: CLLocationDistance = 5.0
                 if maxDistance < threshold && whispers.count > 1 {
-                    print("🎯 [Cluster Tap] Whispers too close (\(maxDistance)m), applying circular offset")
                     
-                    // Spread whispers in circle pattern (radius = 15m per whisper count)
-                    let spreadRadius = 15.0 * Double(whispers.count)  // Scales with count
+                    // MINIMAL spread: 3m base + 0.5m per whisper (e.g., 2 whispers = 3.5m radius, 5 whispers = 5.5m)
+                    // This keeps whispers VERY close to real location while making them tappable
+                    let baseRadius: Double = 3.0  // Base 3m radius
+                    let perWhisperOffset: Double = 0.5  // +0.5m per whisper
+                    let spreadRadius = baseRadius + (perWhisperOffset * Double(whispers.count))
+                    
                     let angleStep = 2.0 * .pi / Double(whispers.count)
                     let centerCoord = clusterAnnotation.coordinate
+                    
                     
                     for (index, whisper) in whispers.enumerated() {
                         let angle = Double(index) * angleStep
