@@ -1377,20 +1377,26 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         // Get current map zoom level (approximate - based on visible region span)
         let zoomLevel = self.getApproximateZoomLevel()
         
-        // DYNAMIC CLUSTERING THRESHOLD based on zoom (like Google Maps)
-        // Zoom 10-12 (city view) = 500m threshold
-        // Zoom 13-14 (district view) = 200m threshold
-        // Zoom 15-16 (street view) = 100m threshold
+        // DYNAMIC CLUSTERING THRESHOLD based on zoom (exponential scale like Google Maps)
+        // Zoom 1-8 (world/continent view) = 50km threshold
+        // Zoom 9-10 (country view) = 10km threshold  
+        // Zoom 11-12 (city view) = 2km threshold
+        // Zoom 13-14 (district view) = 500m threshold
+        // Zoom 15-16 (street view) = 200m threshold
         // Zoom 17+ (building view) = 50m threshold (original)
         let dynamicThreshold: Double
-        if zoomLevel < 13 {
-            dynamicThreshold = 500  // Very zoomed out - large threshold
+        if zoomLevel < 9 {
+            dynamicThreshold = 50000  // World/continent - 50km threshold
+        } else if zoomLevel < 11 {
+            dynamicThreshold = 10000  // Country - 10km threshold
+        } else if zoomLevel < 13 {
+            dynamicThreshold = 2000   // City - 2km threshold
         } else if zoomLevel < 15 {
-            dynamicThreshold = 200  // Medium zoom - medium threshold
+            dynamicThreshold = 500    // District - 500m threshold
         } else if zoomLevel < 17 {
-            dynamicThreshold = 100  // Close zoom - small threshold
+            dynamicThreshold = 200    // Street - 200m threshold
         } else {
-            dynamicThreshold = 50   // Very close zoom - original threshold
+            dynamicThreshold = 50     // Building - 50m threshold (original)
         }
         
         print("🔍 [Clustering] Starting with \(annotations.count) whispers, zoom: \(zoomLevel), threshold: \(dynamicThreshold)m")
