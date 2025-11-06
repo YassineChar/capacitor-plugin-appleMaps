@@ -1205,13 +1205,17 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 // CLUSTER TAP: Calculate intelligent zoom to separate ALL whispers
                 
                 // Find max distance between any 2 whispers in cluster (bounding box)
+                // Use ORIGINAL coordinates for accurate distance measurement
                 var maxDistance: CLLocationDistance = 0
                 let whispers = clusterAnnotation.whisperAnnotations
                 
                 for i in 0..<whispers.count {
                     for j in (i+1)..<whispers.count {
-                        let loc1 = CLLocation(latitude: whispers[i].coordinate.latitude, longitude: whispers[i].coordinate.longitude)
-                        let loc2 = CLLocation(latitude: whispers[j].coordinate.latitude, longitude: whispers[j].coordinate.longitude)
+                        let coord1 = whispers[i].originalCoordinate ?? whispers[i].coordinate
+                        let coord2 = whispers[j].originalCoordinate ?? whispers[j].coordinate
+                        
+                        let loc1 = CLLocation(latitude: coord1.latitude, longitude: coord1.longitude)
+                        let loc2 = CLLocation(latitude: coord2.latitude, longitude: coord2.longitude)
                         let distance = loc1.distance(from: loc2)
                         maxDistance = max(maxDistance, distance)
                     }
@@ -1230,6 +1234,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                     let spreadRadius = baseRadius + (perWhisperOffset * Double(whispers.count))
                     
                     let angleStep = 2.0 * .pi / Double(whispers.count)
+                    
+                    //  Use cluster's coordinate (centroid) as center, not first whisper
                     let centerCoord = clusterAnnotation.coordinate
                     
                     
@@ -1241,6 +1247,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                         let deltaLat = (spreadRadius * sin(angle)) / 111000.0
                         let deltaLon = (spreadRadius * cos(angle)) / (111000.0 * cos(centerCoord.latitude * .pi / 180.0))
                         
+                        // Modify coordinate (for display) but keep originalCoordinate intact
                         whisper.coordinate = CLLocationCoordinate2D(
                             latitude: centerCoord.latitude + deltaLat,
                             longitude: centerCoord.longitude + deltaLon
@@ -1333,10 +1340,18 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             }
         }
         
+        // Restore original coordinates before re-clustering
+        // This ensures whispers always cluster based on their TRUE geographic position
+        for whisper in allWhispers {
+            if let originalCoord = whisper.originalCoordinate {
+                whisper.coordinate = originalCoord
+            }
+        }
+        
         // Remove old annotations
         mapView.removeAnnotations(mapView.annotations.filter { !($0 is MKUserLocation) })
         
-        // Re-cluster with current zoom level
+        // Re-cluster with current zoom level (using restored original coordinates)
         let clustered = self.clusterNearbyWhispers(allWhispers)
         mapView.addAnnotations(clustered)
         
@@ -1401,8 +1416,13 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                     return false
                 }
                 
-                let location1 = CLLocation(latitude: annotation.coordinate.latitude, longitude: annotation.coordinate.longitude)
-                let location2 = CLLocation(latitude: otherAnnotation.coordinate.latitude, longitude: otherAnnotation.coordinate.longitude)
+                // Use ORIGINAL coordinates for distance calculation
+                // This ensures clustering is based on TRUE geographic proximity, not modified positions
+                let coord1 = annotation.originalCoordinate ?? annotation.coordinate
+                let coord2 = otherAnnotation.originalCoordinate ?? otherAnnotation.coordinate
+                
+                let location1 = CLLocation(latitude: coord1.latitude, longitude: coord1.longitude)
+                let location2 = CLLocation(latitude: coord2.latitude, longitude: coord2.longitude)
                 let distance = location1.distance(from: location2)
                 
                 return distance <= dynamicThreshold
@@ -1413,10 +1433,10 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             if nearby.count >= 2 {
                 // PRIORITIZE: Whisper with profile photo as main whisper
                 let mainWhisper = nearby.first { $0.iconUrl != nil && !$0.iconUrl!.isEmpty } ?? nearby.first!
-                
-                // Calculate centroid for stable cluster position
-                let avgLat = nearby.map { $0.coordinate.latitude }.reduce(0, +) / Double(nearby.count)
-                let avgLon = nearby.map { $0.coordinate.longitude }.reduce(0, +) / Double(nearby.count)
+
+                // Calculate centroid using ORIGINAL coordinates (true geographic position)
+                let avgLat = nearby.map { ($0.originalCoordinate ?? $0.coordinate).latitude }.reduce(0, +) / Double(nearby.count)
+                let avgLon = nearby.map { ($0.originalCoordinate ?? $0.coordinate).longitude }.reduce(0, +) / Double(nearby.count)
                 
                 let cluster = WhisperClusterAnnotation()
                 cluster.whisperAnnotations = nearby
