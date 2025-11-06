@@ -491,9 +491,9 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 moreText: moreText
             )
             
-            // Apply minimum opacity from all whispers in cluster (if any whisper is transparent, cluster is transparent)
-            let minOpacity = clusterAnnotation.whisperAnnotations.map { $0.opacity }.min() ?? 1.0
-            annotationView?.alpha = minOpacity
+            let hasClickableWhisper = clusterAnnotation.whisperAnnotations.contains { $0.isClickable }
+            let clusterOpacity: CGFloat = hasClickableWhisper ? 1.0 : (clusterAnnotation.whisperAnnotations.map { $0.opacity }.min() ?? 1.0)
+            annotationView?.alpha = clusterOpacity
             
             // Load profile image asynchronously
             if let iconUrl = mainWhisper.iconUrl, !iconUrl.isEmpty {
@@ -509,8 +509,9 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                         moreText: moreText
                     )
                     // Re-apply opacity after async image load
-                    let minOpacity = clusterAnnotation.whisperAnnotations.map { $0.opacity }.min() ?? 1.0
-                    annotationView.alpha = minOpacity
+                    let hasClickableWhisper = clusterAnnotation.whisperAnnotations.contains { $0.isClickable }
+                    let clusterOpacity: CGFloat = hasClickableWhisper ? 1.0 : (clusterAnnotation.whisperAnnotations.map { $0.opacity }.min() ?? 1.0)
+                    annotationView.alpha = clusterOpacity
                 }
             }
 
@@ -1399,11 +1400,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             dynamicThreshold = 50     // Building - 50m threshold (original)
         }
         
-        print("🔍 [Clustering] Starting with \(annotations.count) whispers, zoom: \(zoomLevel), threshold: \(dynamicThreshold)m")
-        
         // Disable clustering at VERY high zoom levels (> 18 = single building)
         if zoomLevel > 18 {
-            print("⚠️ [Clustering] Zoom > 18, clustering disabled")
             return annotations
         }
         
@@ -1436,8 +1434,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 return distance <= dynamicThreshold
             }
             
-            print("🔍 [Clustering] Whisper \(whisperId): found \(nearby.count) nearby whispers (including self)")
-            
             // Only cluster if 2+ whispers (avoid "+1 more" bug)
             if nearby.count >= 2 {
                 // PRIORITIZE clickable whispers as main whisper (inside radius)
@@ -1445,8 +1441,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 let mainWhisper = nearby.first { $0.isClickable } 
                     ?? nearby.first { $0.iconUrl != nil && !$0.iconUrl!.isEmpty } 
                     ?? nearby.first!
-                
-                print("✅ [Clustering] Creating cluster with \(nearby.count) whispers, main: \(mainWhisper.whisperId ?? "unknown")")
 
                 // Calculate centroid using ORIGINAL coordinates (true geographic position)
                 let avgLat = nearby.map { ($0.originalCoordinate ?? $0.coordinate).latitude }.reduce(0, +) / Double(nearby.count)
@@ -1469,13 +1463,10 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 }
             } else {
                 // Individual whisper (solo or not clustered)
-                print("ℹ️ [Clustering] Whisper \(whisperId): solo, not clustering")
                 result.append(annotation)
                 processed.insert(whisperId)
             }
         }
-        
-        print("✅ [Clustering] Result: \(result.count) annotations (\(result.filter { $0 is WhisperClusterAnnotation }.count) clusters, \(result.filter { $0 is CustomPointAnnotation }.count) individual)")
         
         // Save current zoom level for next comparison
         self.lastClusteredZoomLevel = zoomLevel
