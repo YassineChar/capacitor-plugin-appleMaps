@@ -1393,9 +1393,11 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             dynamicThreshold = 50   // Very close zoom - original threshold
         }
         
+        print("🔍 [Clustering] Starting with \(annotations.count) whispers, zoom: \(zoomLevel), threshold: \(dynamicThreshold)m")
         
         // Disable clustering at VERY high zoom levels (> 18 = single building)
         if zoomLevel > 18 {
+            print("⚠️ [Clustering] Zoom > 18, clustering disabled")
             return annotations
         }
         
@@ -1428,11 +1430,17 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 return distance <= dynamicThreshold
             }
             
+            print("🔍 [Clustering] Whisper \(whisperId): found \(nearby.count) nearby whispers (including self)")
             
             // Only cluster if 2+ whispers (avoid "+1 more" bug)
             if nearby.count >= 2 {
-                // PRIORITIZE: Whisper with profile photo as main whisper
-                let mainWhisper = nearby.first { $0.iconUrl != nil && !$0.iconUrl!.isEmpty } ?? nearby.first!
+                // PRIORITIZE clickable whispers as main whisper (inside radius)
+                // Then prioritize whisper with profile photo
+                let mainWhisper = nearby.first { $0.isClickable } 
+                    ?? nearby.first { $0.iconUrl != nil && !$0.iconUrl!.isEmpty } 
+                    ?? nearby.first!
+                
+                print("✅ [Clustering] Creating cluster with \(nearby.count) whispers, main: \(mainWhisper.whisperId ?? "unknown")")
 
                 // Calculate centroid using ORIGINAL coordinates (true geographic position)
                 let avgLat = nearby.map { ($0.originalCoordinate ?? $0.coordinate).latitude }.reduce(0, +) / Double(nearby.count)
@@ -1455,11 +1463,13 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 }
             } else {
                 // Individual whisper (solo or not clustered)
+                print("ℹ️ [Clustering] Whisper \(whisperId): solo, not clustering")
                 result.append(annotation)
                 processed.insert(whisperId)
             }
         }
         
+        print("✅ [Clustering] Result: \(result.count) annotations (\(result.filter { $0 is WhisperClusterAnnotation }.count) clusters, \(result.filter { $0 is CustomPointAnnotation }.count) individual)")
         
         // Save current zoom level for next comparison
         self.lastClusteredZoomLevel = zoomLevel
