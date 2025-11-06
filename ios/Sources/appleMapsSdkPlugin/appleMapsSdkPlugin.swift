@@ -26,6 +26,7 @@ class CustomPointAnnotation: MKPointAnnotation {
     var markerSize: CGFloat = 60
     var whisperId: String?
     var isClickable: Bool = true
+    var opacity: CGFloat = 1.0  // Opacity for out-of-range whispers (0.0-1.0, default 1.0)
     var originalCoordinate: CLLocationCoordinate2D?
 }
 
@@ -159,7 +160,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         self.hapticGenerator = UIImpactFeedbackGenerator(style: .light)
         self.hapticGenerator?.prepare()
         
-        // CRITICAL: Add tap gesture BEFORE MapKit processes touches (instant response)
+        // Add tap gesture BEFORE MapKit processes touches (instant response)
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleMapTap(_:)))
         tapGesture.cancelsTouchesInView = false  // Allow MapKit to still receive touches
         tapGesture.delaysTouchesBegan = false     // NO delay on touch begin
@@ -334,6 +335,11 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                         annotation.isClickable = isClickable
                     }
                     
+                    // Support opacity for out-of-range whispers (0.0-1.0, default 1.0)
+                    if let opacity = point["opacity"] as? Double {
+                        annotation.opacity = CGFloat(opacity)
+                    }
+                    
                     // Date range handling
                     if let startDate = point["startDate"] as? String, let endDate = point["endDate"] as? String {
                         if startDate == endDate {
@@ -485,10 +491,15 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 moreText: moreText
             )
             
+            // Apply minimum opacity from all whispers in cluster (if any whisper is transparent, cluster is transparent)
+            let minOpacity = clusterAnnotation.whisperAnnotations.map { $0.opacity }.min() ?? 1.0
+            annotationView?.alpha = minOpacity
+            
             // Load profile image asynchronously
             if let iconUrl = mainWhisper.iconUrl, !iconUrl.isEmpty {
-                loadImageAsync(from: iconUrl) { [weak annotationView] image in
+                loadImageAsync(from: iconUrl) { [weak annotationView, weak clusterAnnotation] image in
                     guard let annotationView = annotationView else { return }
+                    guard let clusterAnnotation = clusterAnnotation else { return }
                     annotationView.image = self.generateClusterMarkerImage(
                         profileImage: image,
                         initials: nil,
@@ -497,6 +508,9 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                         size: markerSize,
                         moreText: moreText
                     )
+                    // Re-apply opacity after async image load
+                    let minOpacity = clusterAnnotation.whisperAnnotations.map { $0.opacity }.min() ?? 1.0
+                    annotationView.alpha = minOpacity
                 }
             }
 
@@ -533,10 +547,14 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             borderColor: borderColor,
             size: markerSize
         )
+        
+        // Apply opacity for out-of-range whispers (0.0-1.0, default 1.0)
+        annotationView?.alpha = customAnnotation.opacity
 
         if let iconUrl = customAnnotation.iconUrl, !iconUrl.isEmpty {
-            loadImageAsync(from: iconUrl) { [weak annotationView] image in
+            loadImageAsync(from: iconUrl) { [weak annotationView, weak customAnnotation] image in
                 guard let annotationView = annotationView else { return }
+                guard let customAnnotation = customAnnotation else { return }
                 annotationView.image = self.generateCircularMarkerImage(
                     profileImage: image,
                     initials: nil,
@@ -544,6 +562,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                     borderColor: borderColor,
                     size: markerSize
                 )
+                // Re-apply opacity after async image load
+                annotationView.alpha = customAnnotation.opacity
             }
         }
 
@@ -1389,7 +1409,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             }
             
             
-            // CRITICAL: Only cluster if 2+ whispers (avoid "+1 more" bug)
+            // Only cluster if 2+ whispers (avoid "+1 more" bug)
             if nearby.count >= 2 {
                 // PRIORITIZE: Whisper with profile photo as main whisper
                 let mainWhisper = nearby.first { $0.iconUrl != nil && !$0.iconUrl!.isEmpty } ?? nearby.first!
