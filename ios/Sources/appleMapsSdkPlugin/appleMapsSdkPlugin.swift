@@ -279,7 +279,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             
             // Full cache hit - zero changes
             if incomingWhisperIds == self.cachedWhisperIds && !incomingWhisperIds.isEmpty {
-                print("⚡️ [OPTIMIZATION] Whisper IDs unchanged (\(incomingWhisperIds.count)) - skipping all updates")
                 call.resolve(["status": "cached"])
                 return
             }
@@ -289,7 +288,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             let removedWhisperIds = self.cachedWhisperIds.subtracting(incomingWhisperIds)
             let unchangedWhisperIds = incomingWhisperIds.intersection(self.cachedWhisperIds)
             
-            print("🔄 [GRANULAR DIFF] New: \(newWhisperIds.count), Removed: \(removedWhisperIds.count), Unchanged: \(unchangedWhisperIds.count)")
             
             // Update cache
             self.cachedWhisperIds = incomingWhisperIds
@@ -391,9 +389,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                     whisperAnnotations.append(annotation)
                 }
             }
-            
-            print("✅ [OPTIMIZATION] Detected changes - re-clustering ALL \(whisperAnnotations.count) whispers (New: \(newWhisperIds.count), Removed: \(removedWhisperIds.count))")
-            
+                        
             // CLUSTERING LOGIC: Re-cluster ALL whispers (clustering depends on ALL positions)
             let clusteredAnnotations = self.clusterNearbyWhispers(whisperAnnotations)
             
@@ -1087,7 +1083,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             self.cachedWhisperIds.removeAll()            
             // Force MapKit to invalidate ALL reusable annotation views
             // This clears the internal cache that might be causing clustering issues
-            print("🧹 [Swift clearMarkers] Forcing complete map region update to invalidate view cache...")
             let currentRegion = mapView.region
             let tempRegion = MKCoordinateRegion(
                 center: currentRegion.center,
@@ -1101,7 +1096,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             
             // Final verification
             let remainingAnnotations = mapView.annotations.filter { !($0 is MKUserLocation) }
-            print("✅ [Swift clearMarkers] Completed - total remaining:", mapView.annotations.count, "whisper remaining:", remainingAnnotations.count)
             
             if remainingAnnotations.count > 0 {
                 print("🚨 [Swift clearMarkers] ERROR - Still have whisper annotations after clear!")
