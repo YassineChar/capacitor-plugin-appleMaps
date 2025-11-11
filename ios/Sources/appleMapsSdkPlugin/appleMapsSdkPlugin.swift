@@ -279,6 +279,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             
             // Full cache hit - zero changes
             if incomingWhisperIds == self.cachedWhisperIds && !incomingWhisperIds.isEmpty {
+                print("⚡️ [OPTIMIZATION] Whisper IDs unchanged (\(incomingWhisperIds.count)) - skipping all updates")
                 call.resolve(["status": "cached"])
                 return
             }
@@ -287,38 +288,25 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             let newWhisperIds = incomingWhisperIds.subtracting(self.cachedWhisperIds)
             let removedWhisperIds = self.cachedWhisperIds.subtracting(incomingWhisperIds)
             let unchangedWhisperIds = incomingWhisperIds.intersection(self.cachedWhisperIds)
-                        
+            
+            print("🔄 [GRANULAR DIFF] New: \(newWhisperIds.count), Removed: \(removedWhisperIds.count), Unchanged: \(unchangedWhisperIds.count)")
+            
             // Update cache
             self.cachedWhisperIds = incomingWhisperIds
             
-            // OPTIMIZATION: Only remove/add changed annotations, keep unchanged ones
-            if !removedWhisperIds.isEmpty {
-                let annotationsToRemove = self.mapView?.annotations.filter { annotation in
-                    if let customAnnotation = annotation as? CustomPointAnnotation,
-                       let whisperId = customAnnotation.whisperId {
-                        return removedWhisperIds.contains(whisperId)
-                    }
-                    if let clusterAnnotation = annotation as? WhisperClusterAnnotation {
-                        return clusterAnnotation.whisperAnnotations.contains { whisper in
-                            if let whisperId = whisper.whisperId {
-                                return removedWhisperIds.contains(whisperId)
-                            }
-                            return false
-                        }
-                    }
-                    return false
-                } ?? []
-                
-                if !annotationsToRemove.isEmpty {
-                    self.mapView?.removeAnnotations(annotationsToRemove)
-                }
-            }
+            // CRITICAL: Clustering depends on ALL whispers, not just new ones
+            // We must remove ALL annotations and re-cluster EVERYTHING when there are changes
+            // This ensures clusters are calculated correctly with all whisper positions
             
-            // Track whisper IDs to prevent duplicates (only process NEW whispers)
+            // Remove ALL whisper annotations (not user location)
+            self.mapView?.removeAnnotations(self.mapView?.annotations.filter { !($0 is MKUserLocation) } ?? [])
+            self.clusterAnnotations.removeAll()
+            
+            // Track whisper IDs to prevent duplicates
             var existingWhisperIds = Set<String>()
             
-            // Parse and create annotations ONLY FOR NEW WHISPERS
-            var newWhisperAnnotations: [CustomPointAnnotation] = []
+            // Parse and create annotations from ALL incoming dataPoints
+            var whisperAnnotations: [CustomPointAnnotation] = []
             
             for point in dataPoints {
                 if let lat = point["latitude"] as? Double,
@@ -329,11 +317,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                     var whisperId: String? = nil
                     if let id = point["whisperId"] as? String {
                         whisperId = id
-                        
-                        // SKIP if whisper is UNCHANGED (already on map)
-                        if unchangedWhisperIds.contains(id) {
-                            continue
-                        }
                         
                         // Skip if we've already added this whisper in THIS batch
                         if existingWhisperIds.contains(id) {
@@ -405,21 +388,17 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                         }
                     }
                     
-                    newWhisperAnnotations.append(annotation)
+                    whisperAnnotations.append(annotation)
                 }
             }
             
-            print("✅ [OPTIMIZATION] Processed \(dataPoints.count) dataPoints -> \(newWhisperAnnotations.count) NEW whispers to add (skipped \(unchangedWhisperIds.count) unchanged)")
+            print("✅ [OPTIMIZATION] Detected changes - re-clustering ALL \(whisperAnnotations.count) whispers (New: \(newWhisperIds.count), Removed: \(removedWhisperIds.count))")
             
-            // Only add NEW whispers if there are any
-            if !newWhisperAnnotations.isEmpty {
-                // CLUSTERING LOGIC: Group nearby NEW whispers
-                let clusteredAnnotations = self.clusterNearbyWhispers(newWhisperAnnotations)
-                
-                // Add only NEW annotations to map
-                self.mapView?.addAnnotations(clusteredAnnotations)
-                print("➕ [OPTIMIZATION] Added \(clusteredAnnotations.count) annotations to map")
-            }
+            // CLUSTERING LOGIC: Re-cluster ALL whispers (clustering depends on ALL positions)
+            let clusteredAnnotations = self.clusterNearbyWhispers(whisperAnnotations)
+            
+            // Add all clustered annotations to map
+            self.mapView?.addAnnotations(clusteredAnnotations)
 
             call.resolve(["status": "success"])
         }
