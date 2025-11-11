@@ -56,7 +56,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
     private var hapticGenerator: UIImpactFeedbackGenerator?
     private var moreWhispersTranslation: String = "more"
     private var clusteringThreshold: Double = 50
-    private var lastClusteredZoomLevel: Double = 0 // Track zoom level of last clustering
+    private var lastClusteredZoomLevel: Double = 0
+    private var cachedWhisperIds: Set<String> = [] // Track zoom level of last clustering
     
     public let identifier = "appleMapsSdkPlugin"
     public let jsName = "appleMapsSdk"
@@ -268,15 +269,56 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 self.clusteringThreshold = threshold
             }
 
-            // Remove old annotations (both regular and clusters)
-            self.mapView?.removeAnnotations(self.mapView?.annotations.filter { !($0 is MKUserLocation) } ?? [])
-            self.clusterAnnotations.removeAll()
+            // GRANULAR DIFFING: Identify NEW, REMOVED, and UNCHANGED whispers
+            var incomingWhisperIds = Set<String>()
+            for point in dataPoints {
+                if let id = point["whisperId"] as? String {
+                    incomingWhisperIds.insert(id)
+                }
+            }
             
-            // Track whisper IDs to prevent duplicates
+            // Full cache hit - zero changes
+            if incomingWhisperIds == self.cachedWhisperIds && !incomingWhisperIds.isEmpty {
+                call.resolve(["status": "cached"])
+                return
+            }
+            
+            // Calculate diff sets
+            let newWhisperIds = incomingWhisperIds.subtracting(self.cachedWhisperIds)
+            let removedWhisperIds = self.cachedWhisperIds.subtracting(incomingWhisperIds)
+            let unchangedWhisperIds = incomingWhisperIds.intersection(self.cachedWhisperIds)
+                        
+            // Update cache
+            self.cachedWhisperIds = incomingWhisperIds
+            
+            // OPTIMIZATION: Only remove/add changed annotations, keep unchanged ones
+            if !removedWhisperIds.isEmpty {
+                let annotationsToRemove = self.mapView?.annotations.filter { annotation in
+                    if let customAnnotation = annotation as? CustomPointAnnotation,
+                       let whisperId = customAnnotation.whisperId {
+                        return removedWhisperIds.contains(whisperId)
+                    }
+                    if let clusterAnnotation = annotation as? WhisperClusterAnnotation {
+                        return clusterAnnotation.whisperAnnotations.contains { whisper in
+                            if let whisperId = whisper.whisperId {
+                                return removedWhisperIds.contains(whisperId)
+                            }
+                            return false
+                        }
+                    }
+                    return false
+                } ?? []
+                
+                if !annotationsToRemove.isEmpty {
+                    self.mapView?.removeAnnotations(annotationsToRemove)
+                }
+            }
+            
+            // Track whisper IDs to prevent duplicates (only process NEW whispers)
             var existingWhisperIds = Set<String>()
             
-            // Parse and create annotations from dataPoints array
-            var whisperAnnotations: [CustomPointAnnotation] = []
+            // Parse and create annotations ONLY FOR NEW WHISPERS
+            var newWhisperAnnotations: [CustomPointAnnotation] = []
             
             for point in dataPoints {
                 if let lat = point["latitude"] as? Double,
@@ -288,7 +330,12 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                     if let id = point["whisperId"] as? String {
                         whisperId = id
                         
-                        // Skip if we've already added this whisper
+                        // SKIP if whisper is UNCHANGED (already on map)
+                        if unchangedWhisperIds.contains(id) {
+                            continue
+                        }
+                        
+                        // Skip if we've already added this whisper in THIS batch
                         if existingWhisperIds.contains(id) {
                             print("🚫 [Swift setValuesAppleMaps] SKIPPING DUPLICATE whisper ID:", id)
                             continue
@@ -358,17 +405,21 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                         }
                     }
                     
-                    whisperAnnotations.append(annotation)
+                    newWhisperAnnotations.append(annotation)
                 }
             }
             
-            print("✅ [Swift setValuesAppleMaps] Processed dataPoints:", dataPoints.count, "-> unique whispers:", whisperAnnotations.count, "(duplicates filtered:", dataPoints.count - whisperAnnotations.count, ")")
+            print("✅ [OPTIMIZATION] Processed \(dataPoints.count) dataPoints -> \(newWhisperAnnotations.count) NEW whispers to add (skipped \(unchangedWhisperIds.count) unchanged)")
             
-            // CLUSTERING LOGIC: Group nearby whispers
-            let clusteredAnnotations = self.clusterNearbyWhispers(whisperAnnotations)
-            
-            // Add all annotations (both individual and clusters) to map
-            self.mapView?.addAnnotations(clusteredAnnotations)
+            // Only add NEW whispers if there are any
+            if !newWhisperAnnotations.isEmpty {
+                // CLUSTERING LOGIC: Group nearby NEW whispers
+                let clusteredAnnotations = self.clusterNearbyWhispers(newWhisperAnnotations)
+                
+                // Add only NEW annotations to map
+                self.mapView?.addAnnotations(clusteredAnnotations)
+                print("➕ [OPTIMIZATION] Added \(clusteredAnnotations.count) annotations to map")
+            }
 
             call.resolve(["status": "success"])
         }
