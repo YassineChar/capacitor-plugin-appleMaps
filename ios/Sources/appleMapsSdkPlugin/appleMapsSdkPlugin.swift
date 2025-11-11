@@ -1083,6 +1083,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             self.annotations.removeAll()
             self.clusterAnnotations.removeAll()
             
+          
+            self.cachedWhisperIds.removeAll()            
             // Force MapKit to invalidate ALL reusable annotation views
             // This clears the internal cache that might be causing clustering issues
             print("🧹 [Swift clearMarkers] Forcing complete map region update to invalidate view cache...")
