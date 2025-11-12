@@ -1274,11 +1274,14 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                         let deltaLat = (spreadRadius * sin(angle)) / 111000.0
                         let deltaLon = (spreadRadius * cos(angle)) / (111000.0 * cos(centerCoord.latitude * .pi / 180.0))
                         
-                        // Modify coordinate (for display) but keep originalCoordinate intact
-                        whisper.coordinate = CLLocationCoordinate2D(
+                        // CRITICAL: Update BOTH coordinate AND originalCoordinate
+                        // This makes the spread PERMANENT so whispers stay separated after re-clustering
+                        let newCoord = CLLocationCoordinate2D(
                             latitude: centerCoord.latitude + deltaLat,
                             longitude: centerCoord.longitude + deltaLon
                         )
+                        whisper.coordinate = newCoord
+                        whisper.originalCoordinate = newCoord  // ✅ Make spread permanent
                     }
                     
                     // Recalculate maxDistance after spread
