@@ -277,8 +277,49 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 }
             }
             
-            // Full cache hit - zero changes
+            // Full cache hit - zero changes in whisper IDs
+            // BUT still need to update visual properties (opacity, expiryColor) that may have changed
             if incomingWhisperIds == self.cachedWhisperIds && !incomingWhisperIds.isEmpty {
+                // Build fast lookup map for incoming data
+                var incomingDataMap: [String: [String: Any]] = [:]
+                for point in dataPoints {
+                    if let id = point["whisperId"] as? String {
+                        incomingDataMap[id] = point
+                    }
+                }
+                
+                // Update existing annotations' visual properties WITHOUT removing/re-adding
+                guard let mapView = self.mapView else { 
+                    call.resolve(["status": "cached"])
+                    return 
+                }
+                
+                for annotation in mapView.annotations {
+                    var whisperId: String? = nil
+                    
+                    if let customAnnotation = annotation as? CustomPointAnnotation {
+                        whisperId = customAnnotation.whisperId
+                    } else if let clusterAnnotation = annotation as? WhisperClusterAnnotation {
+                        whisperId = clusterAnnotation.mainWhisper?.whisperId
+                    }
+                    
+                    guard let id = whisperId, let incomingData = incomingDataMap[id] else { continue }
+                    
+                    // Update opacity on annotation view (visual change only)
+                    if let view = mapView.view(for: annotation) {
+                        let newOpacity = (incomingData["opacity"] as? Double) ?? 1.0
+                        view.alpha = CGFloat(newOpacity)
+                    }
+                    
+                    // Update stored opacity on annotation object
+                    if let customAnnotation = annotation as? CustomPointAnnotation {
+                        customAnnotation.opacity = CGFloat((incomingData["opacity"] as? Double) ?? 1.0)
+                        if let expiryColor = incomingData["expiryColor"] as? String {
+                            customAnnotation.expiryColor = expiryColor
+                        }
+                    }
+                }
+                
                 call.resolve(["status": "cached"])
                 return
             }
