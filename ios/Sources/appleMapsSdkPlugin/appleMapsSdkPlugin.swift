@@ -1471,8 +1471,9 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         }
         
         // Disable clustering at VERY high zoom levels (> 18 = single building)
+        // BUT still apply spreading to overlapping whispers
         if zoomLevel > 18 {
-            return annotations
+            return applySpreadingToOverlappingWhispers(annotations)
         }
         
         for annotation in annotations {
@@ -1557,5 +1558,80 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         let zoom = 14.0 - log2(zoomFactor)
         
         return zoom
+    }
+    
+    /**
+     * Apply spreading to overlapping whispers without clustering.
+     * Used at very high zoom levels (> 18) where clustering is disabled.
+     * Finds groups of overlapping whispers (< 5m apart) and spreads them in a circle.
+     */
+    private func applySpreadingToOverlappingWhispers(_ annotations: [CustomPointAnnotation]) -> [MKAnnotation] {
+        var processed: Set<String> = []
+        var result: [MKAnnotation] = []
+        
+        let threshold: CLLocationDistance = 5.0
+        
+        for annotation in annotations {
+            guard let whisperId = annotation.whisperId else {
+                result.append(annotation)
+                continue
+            }
+            
+            if processed.contains(whisperId) {
+                continue
+            }
+            
+            let nearby = annotations.filter { otherAnnotation in
+                guard let otherWhisperId = otherAnnotation.whisperId,
+                      !processed.contains(otherWhisperId) else {
+                    return false
+                }
+                
+                let coord1 = annotation.originalCoordinate ?? annotation.coordinate
+                let coord2 = otherAnnotation.originalCoordinate ?? otherAnnotation.coordinate
+                
+                let location1 = CLLocation(latitude: coord1.latitude, longitude: coord1.longitude)
+                let location2 = CLLocation(latitude: coord2.latitude, longitude: coord2.longitude)
+                let distance = location1.distance(from: location2)
+                
+                return distance <= threshold
+            }
+            
+            if nearby.count >= 2 {
+                let centerLat = nearby.map { ($0.originalCoordinate ?? $0.coordinate).latitude }.reduce(0, +) / Double(nearby.count)
+                let centerLon = nearby.map { ($0.originalCoordinate ?? $0.coordinate).longitude }.reduce(0, +) / Double(nearby.count)
+                let centerCoord = CLLocationCoordinate2D(latitude: centerLat, longitude: centerLon)
+                
+                let baseRadius: Double = 3.0
+                let perWhisperOffset: Double = 0.5
+                let spreadRadius = baseRadius + (perWhisperOffset * Double(nearby.count))
+                
+                let angleStep = 2.0 * .pi / Double(nearby.count)
+                
+                for (index, whisper) in nearby.enumerated() {
+                    let angle = Double(index) * angleStep
+                    
+                    let deltaLat = (spreadRadius * sin(angle)) / 111000.0
+                    let deltaLon = (spreadRadius * cos(angle)) / (111000.0 * cos(centerCoord.latitude * .pi / 180.0))
+                    
+                    let newCoord = CLLocationCoordinate2D(
+                        latitude: centerCoord.latitude + deltaLat,
+                        longitude: centerCoord.longitude + deltaLon
+                    )
+                    whisper.coordinate = newCoord
+                    whisper.originalCoordinate = newCoord
+                    
+                    result.append(whisper)
+                    if let id = whisper.whisperId {
+                        processed.insert(id)
+                    }
+                }
+            } else {
+                result.append(annotation)
+                processed.insert(whisperId)
+            }
+        }
+        
+        return result
     }
 }
