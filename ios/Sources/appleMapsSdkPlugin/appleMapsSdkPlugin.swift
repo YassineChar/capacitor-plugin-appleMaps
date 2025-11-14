@@ -60,7 +60,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
     private var cachedWhisperIds: Set<String> = [] // Track zoom level of last clustering
     
     // AUTO-SYNC VARIABLES: Track current radius for automatic updates
-    private var currentUserRadius: Double = 1000  // Default radius (non-pro)
+    private var currentUserRadius: Double? = nil  // Saved radius when circle is active
     private var autoSyncEnabled: Bool = false     // Only sync when circle is active
     
     public let identifier = "appleMapsSdkPlugin"
@@ -1082,9 +1082,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             // SAVE radius for auto-sync and enable automatic updates
             self.currentUserRadius = radius
             self.autoSyncEnabled = true
-            
-            print("🔵 [AUTO-SYNC] Circle added with radius \(radius)m - auto-sync ENABLED")
-            
+                        
             call.resolve(["status": "success", "circleId": "user-circle"])
         }
     }
