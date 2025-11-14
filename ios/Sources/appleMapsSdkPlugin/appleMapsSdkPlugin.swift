@@ -59,6 +59,10 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
     private var lastClusteredZoomLevel: Double = 0
     private var cachedWhisperIds: Set<String> = [] // Track zoom level of last clustering
     
+    // AUTO-SYNC VARIABLES: Track current radius for automatic updates
+    private var currentUserRadius: Double = 1000  // Default radius (non-pro)
+    private var autoSyncEnabled: Bool = false     // Only sync when circle is active
+    
     public let identifier = "appleMapsSdkPlugin"
     public let jsName = "appleMapsSdk"
     public let pluginMethods: [CAPPluginMethod] = [
@@ -112,8 +116,10 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
     public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
         
+        // If map is not initialized yet, create it
         guard self.mapView == nil else {
-            manager.stopUpdatingLocation()
+            // MAP IS INITIALIZED: Handle location updates for auto-sync
+            self.handleLocationUpdate(location)
             return
         }
         
@@ -1073,6 +1079,12 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             self.userCircle = circle
             mapView.addOverlay(circle)
             
+            // SAVE radius for auto-sync and enable automatic updates
+            self.currentUserRadius = radius
+            self.autoSyncEnabled = true
+            
+            print("🔵 [AUTO-SYNC] Circle added with radius \(radius)m - auto-sync ENABLED")
+            
             call.resolve(["status": "success", "circleId": "user-circle"])
         }
     }
@@ -1091,6 +1103,12 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 mapView.removeOverlay(circle)
                 self.userCircle = nil
             }
+            
+            // DISABLE auto-sync when circle is removed
+            self.autoSyncEnabled = false
+            self.currentUserRadius = nil
+            
+            print("🔵 [AUTO-SYNC] Circle removed - auto-sync DISABLED")
             
             call.resolve(["status": "success"])
         }
@@ -1633,5 +1651,34 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         }
         
         return result
+    }
+    
+    // AUTO-SYNC: Handle location updates when map is already initialized
+    private func handleLocationUpdate(_ location: CLLocation) {
+        DispatchQueue.main.async {
+            guard let mapView = self.mapView else { return }
+            
+            let coordinate = location.coordinate
+            
+            // AUTO-SYNC: Update circle position if enabled
+            if self.autoSyncEnabled, let currentRadius = self.currentUserRadius {
+                // Remove existing circle
+                if let existingCircle = self.userCircle {
+                    mapView.removeOverlay(existingCircle)
+                }
+                
+                // Create new circle at current location with same radius
+                let newCircle = MKCircle(center: coordinate, radius: currentRadius)
+                self.userCircle = newCircle
+                mapView.addOverlay(newCircle)
+                
+            }
+            
+            // Notify Angular with the new location (existing functionality)
+            self.notifyListeners("locationUpdate", data: [
+                "latitude": coordinate.latitude,
+                "longitude": coordinate.longitude
+            ])
+        }
     }
 }
