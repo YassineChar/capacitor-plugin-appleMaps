@@ -339,7 +339,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             // Update cache
             self.cachedWhisperIds = incomingWhisperIds
             
-            // CRITICAL: Clustering depends on ALL whispers, not just new ones
+            // Clustering depends on ALL whispers, not just new ones
             // We must remove ALL annotations and re-cluster EVERYTHING when there are changes
             // This ensures clusters are calculated correctly with all whisper positions
             
@@ -365,7 +365,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                         
                         // Skip if we've already added this whisper in THIS batch
                         if existingWhisperIds.contains(id) {
-                            print("🚫 [Swift setValuesAppleMaps] SKIPPING DUPLICATE whisper ID:", id)
                             continue
                         }
                         existingWhisperIds.insert(id)
@@ -1106,7 +1105,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             self.autoSyncEnabled = false
             self.currentUserRadius = nil
             
-            print("🔵 [AUTO-SYNC] Circle removed - auto-sync DISABLED")
             
             call.resolve(["status": "success"])
         }
@@ -1153,13 +1151,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             
             // Final verification
             let remainingAnnotations = mapView.annotations.filter { !($0 is MKUserLocation) }
-            
-            if remainingAnnotations.count > 0 {
-                print("🚨 [Swift clearMarkers] ERROR - Still have whisper annotations after clear!")
-                for ann in remainingAnnotations {
-                    print("   - Remaining annotation type:", type(of: ann))
-                }
-            }
+        
             
             call.resolve(["status": "success"])
         }
@@ -1331,7 +1323,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                         let deltaLat = (spreadRadius * sin(angle)) / 111000.0
                         let deltaLon = (spreadRadius * cos(angle)) / (111000.0 * cos(centerCoord.latitude * .pi / 180.0))
                         
-                        // CRITICAL: Update BOTH coordinate AND originalCoordinate
+                        // Update BOTH coordinate AND originalCoordinate
                         // This makes the spread PERMANENT so whispers stay separated after re-clustering
                         let newCoord = CLLocationCoordinate2D(
                             latitude: centerCoord.latitude + deltaLat,
