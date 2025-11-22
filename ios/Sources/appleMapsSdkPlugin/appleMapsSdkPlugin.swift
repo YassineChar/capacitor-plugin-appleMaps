@@ -346,8 +346,20 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             // We must remove ALL annotations and re-cluster EVERYTHING when there are changes
             // This ensures clusters are calculated correctly with all whisper positions
             
-            // Remove ALL whisper annotations (not user location)
-            self.mapView?.removeAnnotations(self.mapView?.annotations.filter { !($0 is MKUserLocation) } ?? [])
+            // Remove ALL whisper annotations (NOT user location, NOT mock location)
+            self.mapView?.removeAnnotations(self.mapView?.annotations.filter { annotation in
+                // Keep MKUserLocation (native GPS dot)
+                if annotation is MKUserLocation { return false }
+                
+                // Keep mock location annotation (for TikTok demo)
+                if let pointAnnotation = annotation as? MKPointAnnotation,
+                   pointAnnotation.title == "MockUserLocation" {
+                    return false
+                }
+                
+                // Remove everything else (whispers, clusters)
+                return true
+            } ?? [])
             self.clusterAnnotations.removeAll()
             
             // Track whisper IDs to prevent duplicates
@@ -1251,11 +1263,10 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             }
 
             // Remove ALL CustomPointAnnotation and WhisperClusterAnnotation
-            // Do NOT rely on filter - EXPLICITLY remove our custom types
             let customAnnotations = mapView.annotations.filter { $0 is CustomPointAnnotation }
             let clusterAnnotations = mapView.annotations.filter { $0 is WhisperClusterAnnotation }
             let allWhisperAnnotations = customAnnotations + clusterAnnotations
-            // Remove in one batch
+            
             if !allWhisperAnnotations.isEmpty {
                 mapView.removeAnnotations(allWhisperAnnotations)
             }
@@ -1557,8 +1568,20 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             }
         }
         
-        // Remove old annotations
-        mapView.removeAnnotations(mapView.annotations.filter { !($0 is MKUserLocation) })
+        // Remove old annotations (but keep user location and mock location)
+        mapView.removeAnnotations(mapView.annotations.filter { annotation in
+            // Keep MKUserLocation (native GPS dot)
+            if annotation is MKUserLocation { return false }
+            
+            // Keep mock location annotation (for TikTok demo)
+            if let pointAnnotation = annotation as? MKPointAnnotation,
+               pointAnnotation.title == "MockUserLocation" {
+                return false
+            }
+            
+            // Remove everything else (whispers, clusters)
+            return true
+        })
         
         // Re-cluster with current zoom level (using restored original coordinates)
         let clustered = self.clusterNearbyWhispers(allWhispers)
