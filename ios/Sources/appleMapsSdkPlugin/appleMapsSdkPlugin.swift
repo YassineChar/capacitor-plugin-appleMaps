@@ -49,6 +49,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
     var mapView: MKMapView?
     var locationManager: CLLocationManager?
     var userCircle: MKCircle?
+    var mockUserLocationAnnotation: MKPointAnnotation?  // MOCK user location marker
+    var isMockModeActive: Bool = false  // Track if mock GPS is active
     private var annotations: [String: CustomPointAnnotation] = [:]
     private var clusterAnnotations: [WhisperClusterAnnotation] = []
     private var mapTopOffset: CGFloat = 0
@@ -77,6 +79,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         CAPPluginMethod(name: "addCircle", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "removeCircle", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearMarkers", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setMockUserLocation", returnType: CAPPluginReturnPromise),  // NEW: For TikTok demo
         CAPPluginMethod(name: "closeAppleMaps", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isAppleMapsVisible", returnType: CAPPluginReturnPromise)
     ]
@@ -178,7 +181,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         mapView.delegate = self
         
         mapView.setRegion(region, animated: false)
-        mapView.showsUserLocation = true
+        mapView.showsUserLocation = true  // Default: enabled (will be disabled if mock is activated)
         mapView.isHidden = true
         
         // Insert map BELOW the webview
@@ -469,6 +472,63 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
      * @return MKAnnotationView configured for the annotation, or nil for user location
      */
     public func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+        // MOCK USER LOCATION VIEW for TikTok demo
+        if let pointAnnotation = annotation as? MKPointAnnotation, pointAnnotation.title == "MockUserLocation" {
+            let identifier = "MockUserLocationView"
+            var userView = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
+
+            if userView == nil {
+                userView = MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
+                userView?.canShowCallout = false
+                userView?.isEnabled = false
+                userView?.zPriority = .min
+
+                let dotSize: CGFloat = 16
+                let borderWidth: CGFloat = 2
+                let glowRadius: CGFloat = 10
+                let totalSize = dotSize + (borderWidth * 2) + (glowRadius * 2)
+
+                let renderer = UIGraphicsImageRenderer(size: CGSize(width: totalSize, height: totalSize))
+                let image = renderer.image { ctx in
+                    let center = CGPoint(x: totalSize / 2, y: totalSize / 2)
+                    let blueColor = UIColor(red: 0.0, green: 0.48, blue: 1.0, alpha: 1.0)
+                    let whiteColor = UIColor.white
+
+                    let colors = [blueColor.withAlphaComponent(0.25).cgColor, UIColor.clear.cgColor] as CFArray
+                    let colorSpace = CGColorSpaceCreateDeviceRGB()
+                    if let gradient = CGGradient(colorsSpace: colorSpace, colors: colors, locations: [0, 1]) {
+                        ctx.cgContext.drawRadialGradient(
+                            gradient,
+                            startCenter: center,
+                            startRadius: dotSize / 2,
+                            endCenter: center,
+                            endRadius: totalSize / 2,
+                            options: .drawsAfterEndLocation
+                        )
+                    }
+
+                    let dotRect = CGRect(
+                        x: (totalSize - dotSize) / 2,
+                        y: (totalSize - dotSize) / 2,
+                        width: dotSize,
+                        height: dotSize
+                    )
+                    ctx.cgContext.setFillColor(blueColor.cgColor)
+                    ctx.cgContext.fillEllipse(in: dotRect)
+
+                    ctx.cgContext.setStrokeColor(whiteColor.cgColor)
+                    ctx.cgContext.setLineWidth(borderWidth)
+                    ctx.cgContext.strokeEllipse(in: dotRect.insetBy(dx: borderWidth / 2, dy: borderWidth / 2))
+                }
+
+                userView?.image = image
+                userView?.frame = CGRect(x: 0, y: 0, width: totalSize, height: totalSize)
+                userView?.centerOffset = .zero
+            }
+
+            return userView
+        }
+        
         // CUSTOM USER LOCATION VIEW - Modern, clean design with NO tap interaction
         if annotation is MKUserLocation {
             let identifier = "CustomUserLocationView"
@@ -1105,6 +1165,63 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             self.autoSyncEnabled = false
             self.currentUserRadius = nil
             
+            
+            call.resolve(["status": "success"])
+        }
+    }
+    
+    /**
+     * Set mock user location 
+     * Creates a custom annotation that looks like the user location dot.
+     * Pass latitude/longitude = 0 to DISABLE mock mode and restore native GPS.
+     */
+    @objc func setMockUserLocation(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let mapView = self.mapView else {
+                call.reject("Map is not initialized")
+                return
+            }
+            
+            guard let latitude = call.getDouble("latitude"),
+                  let longitude = call.getDouble("longitude") else {
+                call.reject("latitude and longitude are required")
+                return
+            }
+            
+            // DISABLE MOCK MODE if coordinates are (0, 0)
+            if latitude == 0 && longitude == 0 {
+                // Remove mock annotation
+                if let existingMock = self.mockUserLocationAnnotation {
+                    mapView.removeAnnotation(existingMock)
+                    self.mockUserLocationAnnotation = nil
+                }
+                
+                // Re-enable native user location dot
+                mapView.showsUserLocation = true
+                self.isMockModeActive = false
+                
+                call.resolve(["status": "mock_disabled"])
+                return
+            }
+            
+            // ENABLE MOCK MODE
+            self.isMockModeActive = true
+            
+            // Disable native user location dot (we're using mock)
+            mapView.showsUserLocation = false
+            
+            // Remove existing mock location if present
+            if let existingMock = self.mockUserLocationAnnotation {
+                mapView.removeAnnotation(existingMock)
+            }
+            
+            // Create new mock location annotation
+            let mockAnnotation = MKPointAnnotation()
+            mockAnnotation.coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+            mockAnnotation.title = "MockUserLocation"  // Special identifier
+            
+            self.mockUserLocationAnnotation = mockAnnotation
+            mapView.addAnnotation(mockAnnotation)
             
             call.resolve(["status": "success"])
         }
