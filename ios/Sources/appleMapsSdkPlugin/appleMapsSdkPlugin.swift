@@ -1200,12 +1200,18 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 mapView.showsUserLocation = true
                 self.isMockModeActive = false
                 
+                // RESTART location manager for real GPS tracking
+                self.locationManager?.startUpdatingLocation()
+                
                 call.resolve(["status": "mock_disabled"])
                 return
             }
             
             // ENABLE MOCK MODE
             self.isMockModeActive = true
+            
+           
+            self.locationManager?.stopUpdatingLocation()
             
             // FORCE DISABLE native user location dot (we're using mock)
             mapView.showsUserLocation = false
