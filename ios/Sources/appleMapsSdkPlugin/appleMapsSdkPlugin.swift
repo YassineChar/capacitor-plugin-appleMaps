@@ -1207,8 +1207,15 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             // ENABLE MOCK MODE
             self.isMockModeActive = true
             
-            // Disable native user location dot (we're using mock)
+            // FORCE DISABLE native user location dot (we're using mock)
             mapView.showsUserLocation = false
+            
+            // FORCE REMOVE native location view from map subviews
+            mapView.subviews.forEach { subview in
+                if NSStringFromClass(type(of: subview)).contains("UserLocationView") {
+                    subview.removeFromSuperview()
+                }
+            }
             
             // Remove existing mock location if present
             if let existingMock = self.mockUserLocationAnnotation {
