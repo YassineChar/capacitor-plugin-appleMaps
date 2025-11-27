@@ -1471,23 +1471,58 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                             longitude: centerCoord.longitude + deltaLon
                         )
                         whisper.coordinate = newCoord
-                        whisper.originalCoordinate = newCoord  // ✅ Make spread permanent
+                        whisper.originalCoordinate = newCoord  // Make spread permanent
                     }
                     
                     // Recalculate maxDistance after spread
                     maxDistance = spreadRadius * 2.0
                 }
                 
-                // Calculate target span to show all whispers + 50% margin
-                // 1 degree latitude ≈ 111,000 meters
-                // Add 50% margin so whispers are comfortably separated
-                let marginMultiplier = 1.5
-                let targetSpanMeters = maxDistance * marginMultiplier
-                let targetSpan = (targetSpanMeters / 111000.0) * 1.2 // Extra 20% padding for UI
+                // Calculate target zoom based on threshold tiers
                 
-                // Ensure minimum zoom (don't zoom in too much if whispers are very close)
-                let minSpan = 0.001 // ~110m view (building level)
-                let finalSpan = max(minSpan, targetSpan)
+                let targetZoom: Double
+                if maxDistance > 200000 {
+                    // Need zoom tier with threshold < maxDistance
+                    // Zoom 8-10 has 50km threshold (too small for > 200km)
+                    // Stay at zoom 6 (middle of 200km tier) - will need manual spread
+                    targetZoom = 6.0
+                } else if maxDistance > 50000 {
+                    // 50km < distance <= 200km (e.g., Varese-Verona 150km)
+                    // Target zoom 8-10 tier (50km threshold < 150km = SEPARATION)
+                    targetZoom = 9.0  // Middle of tier
+                } else if maxDistance > 10000 {
+                    // 10km < distance <= 50km
+                    // Target zoom 11-12 tier (10km threshold)
+                    targetZoom = 11.5
+                } else if maxDistance > 2000 {
+                    // 2km < distance <= 10km
+                    // Target zoom 13-14 tier (2km threshold)
+                    targetZoom = 13.5
+                } else if maxDistance > 500 {
+                    // 500m < distance <= 2km
+                    // Target zoom 15-16 tier (500m threshold)
+                    targetZoom = 15.5
+                } else if maxDistance > 200 {
+                    // 200m < distance <= 500m
+                    // Target zoom 17-18 tier (200m threshold)
+                    targetZoom = 17.5
+                } else if maxDistance > 50 {
+                    // 50m < distance <= 200m
+                    // Target zoom 18+ tier (50m threshold)
+                    targetZoom = 18.5
+                } else {
+                    // Very close (< 50m) - zoom to building level
+                    targetZoom = 19.0
+                }
+                
+                // Convert target zoom to MKCoordinateSpan
+                // Web zoom 14 = 0.05 degrees span
+                let baseSpan = 0.05
+                let zoomFactor = pow(2.0, 14.0 - targetZoom)
+                let calculatedSpan = baseSpan * zoomFactor
+                
+                // Add 20% margin for comfortable separation
+                let finalSpan = calculatedSpan * 1.2
                 
                 
                 let region = MKCoordinateRegion(
