@@ -1610,25 +1610,23 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         let zoomLevel = self.getApproximateZoomLevel()
         
         // DYNAMIC CLUSTERING THRESHOLD based on zoom (exponential scale like Google Maps)
-        // Zoom 1-8 (world/continent view) = 50km threshold
-        // Zoom 9-10 (country view) = 10km threshold  
-        // Zoom 11-12 (city view) = 2km threshold
-        // Zoom 13-14 (district view) = 500m threshold
-        // Zoom 15-16 (street view) = 200m threshold
-        // Zoom 17+ (building view) = 50m threshold (original)
         let dynamicThreshold: Double
-        if zoomLevel < 9 {
-            dynamicThreshold = 50000  // World/continent - 50km threshold
-        } else if zoomLevel < 11 {
-            dynamicThreshold = 10000  // Country - 10km threshold
-        } else if zoomLevel < 13 {
-            dynamicThreshold = 2000   // City - 2km threshold
-        } else if zoomLevel < 15 {
-            dynamicThreshold = 500    // District - 500m threshold
-        } else if zoomLevel < 17 {
-            dynamicThreshold = 200    // Street - 200m threshold
+        if zoomLevel < 5 {
+            dynamicThreshold = 500000  // World - 500km (clusters continents)
+        } else if zoomLevel < 8 {
+            dynamicThreshold = 200000  // Continent - 200km (clusters far cities like Varese-Verona)
+        } else if zoomLevel < 10 {
+            dynamicThreshold = 50000   // Country - 50km (clusters provinces)
+        } else if zoomLevel < 12 {
+            dynamicThreshold = 10000   // City - 10km (clusters neighborhoods)
+        } else if zoomLevel < 14 {
+            dynamicThreshold = 2000    // District - 2km (clusters blocks)
+        } else if zoomLevel < 16 {
+            dynamicThreshold = 500     // Street - 500m (clusters nearby streets)
+        } else if zoomLevel < 18 {
+            dynamicThreshold = 200     // Building - 200m (clusters same area)
         } else {
-            dynamicThreshold = 50     // Building - 50m threshold (original)
+            dynamicThreshold = 50      // Very close - 50m (individual whispers)
         }
         
         // Disable clustering at VERY high zoom levels (> 18 = single building)
