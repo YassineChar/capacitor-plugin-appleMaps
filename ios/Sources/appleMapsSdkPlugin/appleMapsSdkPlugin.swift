@@ -1659,24 +1659,34 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         // Get current map zoom level (approximate - based on visible region span)
         let zoomLevel = self.getApproximateZoomLevel()
         
-        // DYNAMIC CLUSTERING THRESHOLD based on zoom (exponential scale like Google Maps)
+        // CONSERVATIVE CLUSTERING THRESHOLD - Only cluster whispers that are VERY close
         let dynamicThreshold: Double
-        if zoomLevel < 5 {
-            dynamicThreshold = 500000  // World - 500km (clusters continents)
-        } else if zoomLevel < 8 {
-            dynamicThreshold = 200000  // Continent - 200km (clusters far cities like Varese-Verona)
+        if zoomLevel < 8 {
+            // World/continent view: NO clustering (too zoomed out, users won't tap anyway)
+            dynamicThreshold = 0  // Disable clustering completely
         } else if zoomLevel < 10 {
-            dynamicThreshold = 50000   // Country - 50km (clusters provinces)
+            // Country view: Cluster only overlapping cities (< 50km)
+            dynamicThreshold = 50000  // 50km - only for VERY far whispers (e.g., Milano-Torino)
         } else if zoomLevel < 12 {
-            dynamicThreshold = 10000   // City - 10km (clusters neighborhoods)
+            // Province view: Cluster only nearby cities (< 10km)
+            dynamicThreshold = 10000  // 10km - only for same city area
         } else if zoomLevel < 14 {
-            dynamicThreshold = 2000    // District - 2km (clusters blocks)
+            // City view: Cluster only same neighborhood (< 2km)
+            dynamicThreshold = 2000   // 2km - walking distance
         } else if zoomLevel < 16 {
-            dynamicThreshold = 500     // Street - 500m (clusters nearby streets)
+            // Neighborhood view: Cluster only same street (< 300m)
+            dynamicThreshold = 300    // 300m - reduced from 500m
         } else if zoomLevel < 18 {
-            dynamicThreshold = 200     // Building - 200m (clusters same area)
+            // Street view: Cluster only same building (< 100m)
+            dynamicThreshold = 100    // 100m - reduced from 200m
         } else {
-            dynamicThreshold = 50      // Very close - 50m (individual whispers)
+            // Building view: Cluster only EXACT overlaps (< 20m)
+            dynamicThreshold = 20     // 20m - reduced from 50m, only REAL overlaps
+        }
+        
+        // Disable clustering at low zoom levels (too zoomed out)
+        if zoomLevel < 8 || dynamicThreshold == 0 {
+            return applySpreadingToOverlappingWhispers(annotations)
         }
         
         // Disable clustering at VERY high zoom levels (> 18 = single building)
