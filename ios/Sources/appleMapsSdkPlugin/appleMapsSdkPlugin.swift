@@ -146,11 +146,12 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             return
         }
         
-        // Calculate frame: start below header (topOffset), extend to bottom of screen
+        // Map starts at y:0 to extend under transparent status bar
+        // topOffset controls where map content begins (for blurred header overlay)
         let safeArea = viewController.view.safeAreaInsets
-        let topY = safeArea.top + self.mapTopOffset
+        let topY = self.mapTopOffset  // Don't add safeArea.top - let map extend to screen top
         
-        // When using native UI (mapHeightOffset = 0), fill entire screen below header
+        // When using native UI (mapHeightOffset = 0), fill entire screen
         // When using web UI with footer (mapHeightOffset > 0), subtract footer space
         let bottomSpace = self.mapHeightOffset > 0 ? (safeArea.bottom + self.mapHeightOffset) : 0
         let availableHeight = viewController.view.bounds.height - topY - bottomSpace
