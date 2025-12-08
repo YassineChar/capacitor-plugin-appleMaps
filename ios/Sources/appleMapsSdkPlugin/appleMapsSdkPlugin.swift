@@ -189,7 +189,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         viewController.view.insertSubview(mapView, belowSubview: webView)
 
         // --- ADD BLURRED GRADIENT UNDER STATUS BAR ---
-        let blurEffect = UIBlurEffect(style: .systemChromeMaterialLight)
+        let blurEffect = UIBlurEffect(style: .systemChromeMaterialDark)
         let blurView = UIVisualEffectView(effect: blurEffect)
 
         // Height equal to status bar height
@@ -201,8 +201,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         let gradientLayer = CAGradientLayer()
         gradientLayer.frame = blurView.bounds
         gradientLayer.colors = [
-            UIColor.white.withAlphaComponent(0.6).cgColor,
-            UIColor.white.withAlphaComponent(0.0).cgColor
+            UIColor.black.withAlphaComponent(0.6).cgColor,
+            UIColor.black.withAlphaComponent(0.0).cgColor
         ]
         gradientLayer.startPoint = CGPoint(x: 0.5, y: 0.0)
         gradientLayer.endPoint = CGPoint(x: 0.5, y: 1.0)
