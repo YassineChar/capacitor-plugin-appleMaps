@@ -51,6 +51,7 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
     var userCircle: MKCircle?
     var mockUserLocationAnnotation: MKPointAnnotation?  // MOCK user location marker
     var isMockModeActive: Bool = false  // Track if mock GPS is active
+    var statusBarBlurView: UIVisualEffectView?  // Blur gradient under status bar
     private var annotations: [String: CustomPointAnnotation] = [:]
     private var clusterAnnotations: [WhisperClusterAnnotation] = []
     private var mapTopOffset: CGFloat = 0
@@ -207,8 +208,12 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         gradientLayer.startPoint = CGPoint(x: 0.5, y: 0.0)
         gradientLayer.endPoint = CGPoint(x: 0.5, y: 1.0)
         blurView.layer.mask = gradientLayer
+        
+        blurView.isHidden = true
 
         viewController.view.insertSubview(blurView, aboveSubview: mapView)
+        
+        self.statusBarBlurView = blurView
 
         // Disable user interaction on Apple’s blue location dot (so whispers above it can be tapped)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -237,6 +242,10 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             }
             
             self.mapView?.isHidden = false
+            
+            // CRITICAL: Show blur gradient with map
+            self.statusBarBlurView?.isHidden = false
+            
             call.resolve(["status": "success"])
         }
     }
@@ -249,6 +258,9 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             }
             
             self.mapView?.isHidden = true
+            
+            self.statusBarBlurView?.isHidden = true
+            
             call.resolve(["status": "success"])
         }
     }
@@ -262,6 +274,9 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             
             self.mapView?.removeFromSuperview()
             self.mapView = nil
+            
+            self.statusBarBlurView?.removeFromSuperview()
+            self.statusBarBlurView = nil
             
             call.resolve(["status": "success"])
         }
