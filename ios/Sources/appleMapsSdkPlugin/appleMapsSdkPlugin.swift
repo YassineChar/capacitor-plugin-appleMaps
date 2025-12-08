@@ -188,6 +188,28 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         // Insert map BELOW the webview
         viewController.view.insertSubview(mapView, belowSubview: webView)
 
+        // --- ADD BLURRED GRADIENT UNDER STATUS BAR ---
+        let blurEffect = UIBlurEffect(style: .systemChromeMaterialLight)
+        let blurView = UIVisualEffectView(effect: blurEffect)
+
+        // Height equal to status bar height
+        let statusBarHeight = viewController.view.safeAreaInsets.top
+        blurView.frame = CGRect(x: 0, y: 0, width: viewController.view.bounds.width, height: statusBarHeight)
+        blurView.autoresizingMask = [.flexibleWidth, .flexibleBottomMargin]
+
+        // Add gradient that fades from blurred (top) to transparent (bottom)
+        let gradientLayer = CAGradientLayer()
+        gradientLayer.frame = blurView.bounds
+        gradientLayer.colors = [
+            UIColor.white.withAlphaComponent(0.6).cgColor,
+            UIColor.white.withAlphaComponent(0.0).cgColor
+        ]
+        gradientLayer.startPoint = CGPoint(x: 0.5, y: 0.0)
+        gradientLayer.endPoint = CGPoint(x: 0.5, y: 1.0)
+        blurView.layer.mask = gradientLayer
+
+        viewController.view.insertSubview(blurView, aboveSubview: mapView)
+
         // Disable user interaction on Apple’s blue location dot (so whispers above it can be tapped)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             self.mapView?.subviews.forEach { subview in
