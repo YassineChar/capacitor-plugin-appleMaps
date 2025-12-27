@@ -147,26 +147,29 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             return
         }
         
-        // Map starts at y:0 to extend under transparent status bar
-        // topOffset controls where map content begins (for blurred header overlay)
-        let safeArea = viewController.view.safeAreaInsets
-        let topY = self.mapTopOffset  // Don't add safeArea.top - let map extend to screen top
-        
-        // When using native UI (mapHeightOffset = 0), fill entire screen
-        // When using web UI with footer (mapHeightOffset > 0), subtract footer space
-        let bottomSpace = self.mapHeightOffset > 0 ? (safeArea.bottom + self.mapHeightOffset) : 0
-        let availableHeight = viewController.view.bounds.height - topY - bottomSpace
-        
-        let frame = CGRect(
-            x: 0,
-            y: topY,
-            width: viewController.view.bounds.width,
-            height: availableHeight
-        )
-        
-        let mapView = MKMapView(frame: frame)
-        mapView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        // Create map view with Auto Layout (not frame-based) to avoid race conditions
+        let mapView = MKMapView()
+        mapView.translatesAutoresizingMaskIntoConstraints = false
         self.mapView = mapView
+        
+        // Insert map BELOW the webview FIRST (before setting constraints)
+        guard let webView = self.bridge?.webView else {
+            manager.stopUpdatingLocation()
+            return
+        }
+        viewController.view.insertSubview(mapView, belowSubview: webView)
+        
+        // Set up Auto Layout constraints (dynamic, no fixed frame)
+        let topY = self.mapTopOffset
+        let bottomOffset = self.mapHeightOffset > 0 ? self.mapHeightOffset : 0
+        
+        NSLayoutConstraint.activate([
+            mapView.topAnchor.constraint(equalTo: viewController.view.topAnchor, constant: topY),
+            mapView.leadingAnchor.constraint(equalTo: viewController.view.leadingAnchor),
+            mapView.trailingAnchor.constraint(equalTo: viewController.view.trailingAnchor),
+            mapView.bottomAnchor.constraint(equalTo: viewController.view.safeAreaLayoutGuide.bottomAnchor, constant: -bottomOffset)
+        ])
+        
         
         // Prepare haptic generator for instant feedback (no delay on first tap)
         self.hapticGenerator = UIImpactFeedbackGenerator(style: .light)
@@ -186,9 +189,6 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         mapView.showsUserLocation = true  // Default: enabled (will be disabled if mock is activated)
         mapView.isHidden = true
         
-        // Insert map BELOW the webview
-        viewController.view.insertSubview(mapView, belowSubview: webView)
-
         // --- ADD BLURRED GRADIENT UNDER STATUS BAR ---
         let blurEffect = UIBlurEffect(style: .systemChromeMaterialDark)
         let blurView = UIVisualEffectView(effect: blurEffect)
