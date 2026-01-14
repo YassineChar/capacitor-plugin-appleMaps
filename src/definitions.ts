@@ -5,6 +5,8 @@ export interface appleMapsSdkPlugin {
   hideAppleMaps(): Promise<{ status: string }>;  // Make the map invisible
   setValuesAppleMaps(options: { dataPoints: { latitude: number; longitude: number; label: string }[] }): Promise<{ status: string }>;
   setCenterPoint(options: { latitude: number; longitude: number }): Promise<{ status: string }>;
+  enableArchiveMode(): Promise<{ status: string }>;  // Enable archive mode (hide circle, no expiry borders)
+  disableArchiveMode(): Promise<{ status: string }>;  // Disable archive mode (restore normal)
   closeAppleMaps(): Promise<{ status: string }>;  // Close the map
   isAppleMapsVisible(): Promise<{ status: number }>;  // Return value: 0 = not initialized, 1 = invisible, 2 = visible
 }

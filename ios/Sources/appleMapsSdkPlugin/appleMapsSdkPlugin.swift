@@ -66,6 +66,9 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
     private var currentUserRadius: Double? = nil  // Saved radius when circle is active
     private var autoSyncEnabled: Bool = false     // Only sync when circle is active
     
+    // ARCHIVE MODE: Track if viewing archive whispers (no radius circle, no expiry borders)
+    private var isArchiveMode: Bool = false
+    
     public let identifier = "appleMapsSdkPlugin"
     public let jsName = "appleMapsSdk"
     public let pluginMethods: [CAPPluginMethod] = [
@@ -81,6 +84,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         CAPPluginMethod(name: "removeCircle", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearMarkers", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setMockUserLocation", returnType: CAPPluginReturnPromise),  
+        CAPPluginMethod(name: "enableArchiveMode", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "disableArchiveMode", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "closeAppleMaps", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isAppleMapsVisible", returnType: CAPPluginReturnPromise)
     ]
@@ -655,7 +660,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 return nil
             }
             
-            let borderColor = getBorderColorFromExpiry(mainWhisper.expiryColor)
+            // ARCHIVE MODE: No expiry border (use neutral color or transparent)
+            let borderColor = self.isArchiveMode ? UIColor.systemGray5 : getBorderColorFromExpiry(mainWhisper.expiryColor)
             let markerSize = mainWhisper.markerSize
             let avatarBgColor = mainWhisper.avatarColor.flatMap { parseHexColor($0) }
             
@@ -727,7 +733,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             annotationView?.annotation = annotation
         }
 
-        let borderColor = getBorderColorFromExpiry(customAnnotation.expiryColor)
+        // ARCHIVE MODE: No expiry border (use neutral color or transparent)
+        let borderColor = self.isArchiveMode ? UIColor.systemGray5 : getBorderColorFromExpiry(customAnnotation.expiryColor)
         let markerSize = customAnnotation.markerSize
         let avatarBgColor = customAnnotation.avatarColor.flatMap { parseHexColor($0) }
 
@@ -1227,6 +1234,48 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             self.autoSyncEnabled = false
             self.currentUserRadius = nil
             
+            
+            call.resolve(["status": "success"])
+        }
+    }
+    
+    /**
+     * Enable archive mode: hide radius circle, hide create button, remove expiry borders from markers.
+     * Used when viewing user's archive whispers on map.
+     */
+    @objc func enableArchiveMode(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let mapView = self.mapView else {
+                call.reject("Map is not initialized")
+                return
+            }
+            
+            self.isArchiveMode = true
+            
+            // Remove radius circle if present
+            if let circle = self.userCircle {
+                mapView.removeOverlay(circle)
+            }
+            
+            // Disable auto-sync (not needed in archive mode)
+            self.autoSyncEnabled = false
+            
+            // Notify JS to hide create button
+            self.notifyListeners("archiveModeEnabled", data: [:])
+            
+            call.resolve(["status": "success"])
+        }
+    }
+    
+    /**
+     * Disable archive mode: restore normal map functionality.
+     */
+    @objc func disableArchiveMode(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.isArchiveMode = false
+            
+            // Notify JS to restore create button
+            self.notifyListeners("archiveModeDisabled", data: [:])
             
             call.resolve(["status": "success"])
         }
