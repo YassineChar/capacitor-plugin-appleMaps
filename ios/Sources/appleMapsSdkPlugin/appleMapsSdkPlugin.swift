@@ -786,6 +786,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             return UIColor(red: 255/255, green: 235/255, blue: 59/255, alpha: 1.0)
         case "green":
             return UIColor(red: 76/255, green: 175/255, blue: 80/255, alpha: 1.0)
+        case "purple":
+            return UIColor(red: 145/255, green: 70/255, blue: 255/255, alpha: 1.0)
         default:
             return UIColor.systemBlue
         }
