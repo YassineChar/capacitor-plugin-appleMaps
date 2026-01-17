@@ -660,8 +660,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 return nil
             }
             
-            // ARCHIVE MODE: No expiry border (use neutral color or transparent)
-            let borderColor = self.isArchiveMode ? UIColor.systemGray5 : getBorderColorFromExpiry(mainWhisper.expiryColor)
+            // Use expiryColor for all markers including archive mode (purple for archive)
+            let borderColor = getBorderColorFromExpiry(mainWhisper.expiryColor)
             let markerSize = mainWhisper.markerSize
             let avatarBgColor = mainWhisper.avatarColor.flatMap { parseHexColor($0) }
             
@@ -733,8 +733,8 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
             annotationView?.annotation = annotation
         }
 
-        // ARCHIVE MODE: No expiry border (use neutral color or transparent)
-        let borderColor = self.isArchiveMode ? UIColor.systemGray5 : getBorderColorFromExpiry(customAnnotation.expiryColor)
+        // Use expiryColor for all markers including archive mode (purple for archive)
+        let borderColor = getBorderColorFromExpiry(customAnnotation.expiryColor)
         let markerSize = customAnnotation.markerSize
         let avatarBgColor = customAnnotation.avatarColor.flatMap { parseHexColor($0) }
 
