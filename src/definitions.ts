@@ -9,4 +9,11 @@ export interface appleMapsSdkPlugin {
   disableArchiveMode(): Promise<{ status: string }>;  // Disable archive mode (restore normal)
   closeAppleMaps(): Promise<{ status: string }>;  // Close the map
   isAppleMapsVisible(): Promise<{ status: number }>;  // Return value: 0 = not initialized, 1 = invisible, 2 = visible
+  captureMapSnapshot(options: {
+    latitude: number;
+    longitude: number;
+    width?: number;
+    height?: number;
+    spanMeters?: number;
+  }): Promise<{ imageBase64: string; width: number; height: number }>;
 }

@@ -87,8 +87,81 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         CAPPluginMethod(name: "enableArchiveMode", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "disableArchiveMode", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "closeAppleMaps", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "isAppleMapsVisible", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "isAppleMapsVisible", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "captureMapSnapshot", returnType: CAPPluginReturnPromise)
     ]
+
+    @objc func captureMapSnapshot(_ call: CAPPluginCall) {
+        guard let latitude = call.getDouble("latitude"),
+              let longitude = call.getDouble("longitude") else {
+            call.reject("Missing required params: latitude, longitude")
+            return
+        }
+
+        let width = CGFloat(call.getDouble("width") ?? 1080)
+        let height = CGFloat(call.getDouble("height") ?? 1080)
+    
+        let spanMeters = call.getDouble("spanMeters") ?? 2000
+
+        let options = MKMapSnapshotter.Options()
+        options.region = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
+            latitudinalMeters: spanMeters,
+            longitudinalMeters: spanMeters
+        )
+        options.size = CGSize(width: width, height: height)
+        options.scale = UIScreen.main.scale
+
+        if #available(iOS 13.0, *) {
+            options.traitCollection = UITraitCollection(userInterfaceStyle: .dark)
+        }
+        options.mapType = .standard
+        options.pointOfInterestFilter = .excludingAll
+        options.showsBuildings = false
+
+        let snapshotter = MKMapSnapshotter(options: options)
+        snapshotter.start(with: .global(qos: .userInitiated)) { snapshot, error in
+            if let error = error {
+                call.reject("Snapshot failed: \(error.localizedDescription)")
+                return
+            }
+            guard let snapshot = snapshot else {
+                call.reject("Snapshot returned nil")
+                return
+            }
+
+            let image = UIGraphicsImageRenderer(size: snapshot.image.size).image { _ in
+                snapshot.image.draw(at: .zero)
+
+                let centerPoint = snapshot.point(for: CLLocationCoordinate2D(latitude: latitude, longitude: longitude))
+                let pinSize: CGFloat = 36
+                let pinRect = CGRect(
+                    x: centerPoint.x - pinSize / 2,
+                    y: centerPoint.y - pinSize,
+                    width: pinSize,
+                    height: pinSize
+                )
+
+                let pinPath = UIBezierPath(ovalIn: pinRect.insetBy(dx: 4, dy: 4))
+                UIColor(red: 1.0, green: 0.2, blue: 0.25, alpha: 0.95).setFill()
+                pinPath.fill()
+                UIColor.white.setStroke()
+                pinPath.lineWidth = 3
+                pinPath.stroke()
+            }
+
+            guard let pngData = image.pngData() else {
+                call.reject("Failed to encode snapshot to PNG")
+                return
+            }
+
+            call.resolve([
+                "imageBase64": pngData.base64EncodedString(),
+                "width": snapshot.image.size.width,
+                "height": snapshot.image.size.height
+            ])
+        }
+    }
 
     @objc func echo(_ call: CAPPluginCall) {
         let value = call.getString("value") ?? ""
