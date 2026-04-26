@@ -16,4 +16,15 @@ export interface appleMapsSdkPlugin {
     height?: number;
     spanMeters?: number;
   }): Promise<{ imageBase64: string; width: number; height: number }>;
+
+  /**
+   * v2.1: Apre Instagram Stories Editor con un'immagine come background.
+   * Internamente usa UIPasteboard (richiesta IG) — l'URL scheme non supporta il payload.
+   * @param imageBase64 - PNG base64 (con o senza prefisso data URI)
+   * @param sourceApplication - bundle ID o FB App ID (default: bundle ID)
+   */
+  shareImageToInstagramStory(options: {
+    imageBase64: string;
+    sourceApplication?: string;
+  }): Promise<{ status: string }>;
 }

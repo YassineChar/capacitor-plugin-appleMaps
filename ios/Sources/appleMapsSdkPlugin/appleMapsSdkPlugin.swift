@@ -88,8 +88,60 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
         CAPPluginMethod(name: "disableArchiveMode", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "closeAppleMaps", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isAppleMapsVisible", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "captureMapSnapshot", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "captureMapSnapshot", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "shareImageToInstagramStory", returnType: CAPPluginReturnPromise)
     ]
+
+    @objc func shareImageToInstagramStory(_ call: CAPPluginCall) {
+        guard let imageBase64 = call.getString("imageBase64") else {
+            call.reject("Missing imageBase64")
+            return
+        }
+
+        let sourceApplication = call.getString("sourceApplication")
+            ?? Bundle.main.bundleIdentifier
+            ?? "com.whisperspots.app"
+
+        var cleanBase64 = imageBase64
+        if cleanBase64.contains(",") {
+            cleanBase64 = cleanBase64.components(separatedBy: ",").last ?? cleanBase64
+        }
+
+        guard let imageData = Data(base64Encoded: cleanBase64) else {
+            call.reject("Invalid base64 image data")
+            return
+        }
+
+        DispatchQueue.main.async {
+            guard let url = URL(string: "instagram-stories://share?source_application=\(sourceApplication)") else {
+                call.reject("Invalid Instagram URL scheme")
+                return
+            }
+
+            guard UIApplication.shared.canOpenURL(url) else {
+                call.reject("INSTAGRAM_NOT_INSTALLED")
+                return
+            }
+
+            let pasteboardItems: [String: Any] = [
+                "com.instagram.sharedSticker.backgroundImage": imageData
+            ]
+
+            let pasteboardOptions: [UIPasteboard.OptionsKey: Any] = [
+                .expirationDate: Date(timeIntervalSinceNow: 60 * 5) // 5 min richiesti da IG
+            ]
+
+            UIPasteboard.general.setItems([pasteboardItems], options: pasteboardOptions)
+
+            UIApplication.shared.open(url, options: [:]) { success in
+                if success {
+                    call.resolve(["status": "success"])
+                } else {
+                    call.reject("Failed to open Instagram Stories")
+                }
+            }
+        }
+    }
 
     @objc func captureMapSnapshot(_ call: CAPPluginCall) {
         guard let latitude = call.getDouble("latitude"),
