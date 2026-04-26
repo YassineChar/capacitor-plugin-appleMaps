@@ -123,9 +123,14 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 return
             }
 
-            let pasteboardItems: [String: Any] = [
+            // contentURL: se fornito, IG aggiunge un link-sticker tappabile sulla story.
+            // Quando un viewer tappa il sticker → apre questo URL (universal link → app o App Store).
+            var pasteboardItems: [String: Any] = [
                 "com.instagram.sharedSticker.backgroundImage": imageData
             ]
+            if let contentURL = call.getString("contentURL"), !contentURL.isEmpty {
+                pasteboardItems["com.instagram.sharedSticker.contentURL"] = contentURL
+            }
 
             let pasteboardOptions: [UIPasteboard.OptionsKey: Any] = [
                 .expirationDate: Date(timeIntervalSinceNow: 60 * 5) // 5 min richiesti da IG
@@ -182,27 +187,9 @@ public class appleMapsSdkPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerD
                 return
             }
 
-            let image = UIGraphicsImageRenderer(size: snapshot.image.size).image { _ in
-                snapshot.image.draw(at: .zero)
-
-                let centerPoint = snapshot.point(for: CLLocationCoordinate2D(latitude: latitude, longitude: longitude))
-                let pinSize: CGFloat = 36
-                let pinRect = CGRect(
-                    x: centerPoint.x - pinSize / 2,
-                    y: centerPoint.y - pinSize,
-                    width: pinSize,
-                    height: pinSize
-                )
-
-                let pinPath = UIBezierPath(ovalIn: pinRect.insetBy(dx: 4, dy: 4))
-                UIColor(red: 1.0, green: 0.2, blue: 0.25, alpha: 0.95).setFill()
-                pinPath.fill()
-                UIColor.white.setStroke()
-                pinPath.lineWidth = 3
-                pinPath.stroke()
-            }
-
-            guard let pngData = image.pngData() else {
+            // v2.1: snapshot pulito senza pin — l'avatar viene overlaid lato JS in Canvas
+            // così match perfetto con lo stile della mappa principale (avatar circolare + ring viola).
+            guard let pngData = snapshot.image.pngData() else {
                 call.reject("Failed to encode snapshot to PNG")
                 return
             }

@@ -26,5 +26,11 @@ export interface appleMapsSdkPlugin {
   shareImageToInstagramStory(options: {
     imageBase64: string;
     sourceApplication?: string;
+    /**
+     * URL aperto quando il viewer tappa il link-sticker della story.
+     * Universal link consigliato (es. https://app.whisperspots.com/whisper/{id})
+     * → apre app se installata, altrimenti fallback a browser/App Store.
+     */
+    contentURL?: string;
   }): Promise<{ status: string }>;
 }
